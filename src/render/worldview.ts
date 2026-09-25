@@ -1,0 +1,375 @@
+import { CREATURE_SIZE, drawCreature } from './creatures';
+import { drawCloneTop } from './clone';
+import { INK } from './palette';
+import { noise } from './sketch';
+import { inStorm, inView, isDark, type RunState } from '../core/run';
+import { gateAt, idx, T_GATE, T_HAZARD, T_WALL, type Mob, type Poi } from '../world/gen';
+
+const FLOOR = '#2b2d31';
+const FLOOR_LINE = '#393c42';
+const WALL_TOP = '#5e5a50';
+const WALL_EDGE = '#8c8574';
+const WALL_FACE = '#17191c';
+const HAZARD = '#5fae68';
+
+export const TILES_ACROSS = 11;
+
+/** Top-down, three-quarter view of a planet map. */
+export class WorldView {
+  camX = 0;
+  camY = 0;
+  private snapped = false;
+  T = 32;
+  W = 0;
+  H = 0;
+
+  resize(W: number, H: number) {
+    this.W = W;
+    this.H = H;
+    this.T = Math.floor(W / TILES_ACROSS);
+  }
+
+  snap() {
+    this.snapped = false;
+  }
+
+  /** Screen position of a tile's top-left corner. */
+  sx(x: number) { return (x - this.camX) * this.T + this.W / 2 - this.T / 2; }
+  sy(y: number) { return (y - this.camY) * this.T + this.H * 0.46 - this.T / 2; }
+
+  tileAt(px: number, py: number): [number, number] {
+    const x = Math.floor((px - this.W / 2 + this.T / 2) / this.T + this.camX);
+    const y = Math.floor((py - this.H * 0.46 + this.T / 2) / this.T + this.camY);
+    return [x, y];
+  }
+
+  draw(ctx: CanvasRenderingContext2D, r: RunState, t: number, dt: number, px: number, py: number, walking: boolean, path: [number, number][]) {
+    const w = r.world;
+    const T = this.T;
+    if (!this.snapped) { this.camX = px; this.camY = py; this.snapped = true; }
+    const k = 1 - Math.exp(-dt * 10);
+    this.camX += (px - this.camX) * k;
+    this.camY += (py - this.camY) * k;
+
+    ctx.fillStyle = INK.void;
+    ctx.fillRect(0, 0, this.W, this.H);
+
+    const cols = Math.ceil(TILES_ACROSS / 2) + 2;
+    const rows = Math.ceil(this.H / T / 2) + 3;
+    const x0 = Math.floor(this.camX) - cols;
+    const x1 = Math.ceil(this.camX) + cols;
+    const y0 = Math.floor(this.camY) - rows;
+    const y1 = Math.ceil(this.camY) + rows;
+    const lift = T * 0.42;
+
+    const mobsByRow = new Map<number, Mob[]>();
+    for (const m of w.mobs) {
+      if (!m.alive) continue;
+      if (m.kind === 'ambush' && !m.spotted) continue;
+      if (!inView(r, m.x, m.y) && m.kind !== 'boss') continue;
+      if (!w.seen[idx(w, m.x, m.y)]) continue;
+      const list = mobsByRow.get(m.y) ?? [];
+      list.push(m);
+      mobsByRow.set(m.y, list);
+    }
+    const poisByRow = new Map<number, Poi[]>();
+    for (const p of w.pois) {
+      if (p.hidden || !w.seen[idx(w, p.x, p.y)]) continue;
+      const list = poisByRow.get(p.y) ?? [];
+      list.push(p);
+      poisByRow.set(p.y, list);
+    }
+
+    for (let y = y0; y <= y1; y++) {
+      // floors
+      for (let x = x0; x <= x1; x++) {
+        if (x < 0 || y < 0 || x >= w.w || y >= w.h) continue;
+        const i = idx(w, x, y);
+        if (!w.seen[i]) continue;
+        const tile = w.tiles[i];
+        if (tile === T_WALL) continue;
+        const X = this.sx(x);
+        const Y = this.sy(y);
+        ctx.fillStyle = FLOOR;
+        ctx.fillRect(X, Y, T + 0.5, T + 0.5);
+        ctx.strokeStyle = FLOOR_LINE;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(X + 1.5, Y + 1.5, T - 3, T - 3);
+        if ((x * 7 + y * 13) % 5 === 0) {
+          ctx.fillStyle = FLOOR_LINE;
+          ctx.fillRect(X + 4, Y + 4, 2, 2);
+          ctx.fillRect(X + T - 6, Y + T - 6, 2, 2);
+        }
+        if (tile === T_HAZARD) {
+          const g = 0.35 + 0.15 * Math.sin(t * 2 + x + y * 0.7);
+          ctx.fillStyle = HAZARD;
+          ctx.globalAlpha = g;
+          ctx.beginPath();
+          ctx.ellipse(X + T / 2 + noise(i) * T * 0.1, Y + T / 2, T * 0.46, T * 0.36, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.globalAlpha = 1;
+          ctx.fillStyle = '#b6f0a8';
+          ctx.fillRect(X + T * (0.3 + 0.2 * noise(i + 1)), Y + T * 0.45, 2, 2);
+        }
+        if (tile === T_GATE) this.drawGate(ctx, r, x, y, X, Y, t);
+      }
+      // path dots
+      for (const [qx, qy] of path) {
+        if (qy !== y) continue;
+        ctx.fillStyle = INK.bone;
+        ctx.globalAlpha = 0.5;
+        ctx.fillRect(this.sx(qx) + T / 2 - 2, this.sy(qy) + T / 2 - 2, 4, 4);
+        ctx.globalAlpha = 1;
+      }
+      // walls: face then raised top
+      for (let x = x0; x <= x1; x++) {
+        if (x < 0 || y < 0 || x >= w.w || y >= w.h) continue;
+        const i = idx(w, x, y);
+        if (!w.seen[i] || w.tiles[i] !== T_WALL) continue;
+        const X = this.sx(x);
+        const Y = this.sy(y);
+        const below = y + 1 < w.h ? w.tiles[idx(w, x, y + 1)] : T_WALL;
+        if (below !== T_WALL) {
+          ctx.fillStyle = WALL_FACE;
+          ctx.fillRect(X, Y + T - lift, T + 0.5, lift + 0.5);
+          ctx.fillStyle = '#23262a';
+          ctx.fillRect(X, Y + T - 3, T + 0.5, 3);
+        }
+        ctx.fillStyle = WALL_TOP;
+        ctx.fillRect(X, Y - lift, T + 0.5, T + 0.5);
+        ctx.fillStyle = WALL_EDGE;
+        if (y > 0 && w.tiles[idx(w, x, y - 1)] !== T_WALL) ctx.fillRect(X, Y - lift, T + 0.5, 2);
+        if (below !== T_WALL) {
+          ctx.fillStyle = '#5c584e';
+          ctx.fillRect(X, Y + T - lift - 2, T + 0.5, 2);
+        }
+      }
+      // things standing in this row
+      for (const p of poisByRow.get(y) ?? []) this.drawPoi(ctx, r, p, t);
+      for (const b of r.beacons) if (b.y === y) this.drawBeacon(ctx, b.x, b.y, b.used, t);
+      for (const m of mobsByRow.get(y) ?? []) this.drawMob(ctx, r, m, t);
+      if (Math.round(py) === y) {
+        drawCloneTop(ctx, this.sx(px) + T / 2, this.sy(py) + T * 0.86, T, r.facing, t, walking);
+      }
+    }
+
+    // fog, darkness and storm
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        if (x < 0 || y < 0 || x >= w.w || y >= w.h) continue;
+        const i = idx(w, x, y);
+        if (!w.seen[i]) continue;
+        const X = this.sx(x);
+        const Y = this.sy(y) - (w.tiles[i] === T_WALL ? T * 0.42 : 0);
+        let a = inView(r, x, y) ? 0 : 0.55;
+        if (isDark(r, x, y)) a = Math.min(0.8, a + 0.25);
+        if (a > 0) {
+          ctx.fillStyle = `rgba(8,9,11,${a})`;
+          ctx.fillRect(X, Y, T + 0.5, T + 0.5);
+        }
+        if (inStorm(r, x, y)) {
+          ctx.fillStyle = 'rgba(122,74,179,0.28)';
+          ctx.fillRect(X, Y, T + 0.5, T + 0.5);
+          ctx.strokeStyle = 'rgba(216,207,184,0.35)';
+          ctx.beginPath();
+          const o = ((t * 60 + x * 17 + y * 29) % T);
+          ctx.moveTo(X + o, Y);
+          ctx.lineTo(X + o - T * 0.3, Y + T);
+          ctx.stroke();
+        }
+      }
+    }
+  }
+
+  private drawGate(ctx: CanvasRenderingContext2D, r: RunState, x: number, y: number, X: number, Y: number, t: number) {
+    const g = gateAt(r.world, x, y)!;
+    const T = this.T;
+    if (g.open) {
+      ctx.fillStyle = '#1f2125';
+      ctx.fillRect(X + 2, Y + 2, T - 4, T - 4);
+      return;
+    }
+    if (g.kind === 'door') {
+      ctx.fillStyle = '#3a3226';
+      ctx.fillRect(X + 1, Y - T * 0.42, T - 2, T * 1.42 - 1);
+      ctx.fillStyle = INK.sodium;
+      ctx.fillRect(X + 1, Y - T * 0.42, T - 2, T * 0.12);
+      for (let k = 0; k < 4; k++) {
+        ctx.fillStyle = k % 2 ? INK.void : INK.sodium;
+        ctx.fillRect(X + 1 + (k * (T - 2)) / 4, Y + T * 0.72, (T - 2) / 4, T * 0.1);
+      }
+      ctx.strokeStyle = INK.void;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(X + T / 2, Y - T * 0.3);
+      ctx.lineTo(X + T / 2, Y + T * 0.7);
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = INK.rust;
+      for (let k = 0; k < 6; k++) {
+        const ox = noise(g.id * 10 + k) * T * 0.3;
+        const oy = noise(g.id * 10 + k + 50) * T * 0.25;
+        ctx.save();
+        ctx.translate(X + T / 2 + ox, Y + T * 0.45 + oy - T * 0.15);
+        ctx.rotate(noise(g.id + k) * 1.2);
+        ctx.fillRect(-T * 0.3, -T * 0.1, T * 0.6, T * 0.2);
+        ctx.strokeStyle = INK.boneDim;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(-T * 0.3, -T * 0.1, T * 0.6, T * 0.2);
+        ctx.restore();
+      }
+    }
+    // rating pips
+    ctx.fillStyle = g.forcible ? INK.bone : INK.flesh;
+    for (let k = 0; k < g.rating; k++) ctx.fillRect(X + 3 + k * 5, Y - T * 0.36, 3, 3);
+    void t;
+  }
+
+  private drawPoi(ctx: CanvasRenderingContext2D, r: RunState, p: Poi, t: number) {
+    const T = this.T;
+    const X = this.sx(p.x);
+    const Y = this.sy(p.y);
+    const cx = X + T / 2;
+    const fy = Y + T * 0.85;
+    ctx.lineWidth = Math.max(1, T * 0.04);
+    ctx.strokeStyle = INK.bone;
+    switch (p.kind) {
+      case 'cache':
+        ctx.fillStyle = p.used ? '#24262a' : INK.boneDim;
+        ctx.fillRect(cx - T * 0.32, fy - T * 0.5, T * 0.64, T * 0.46);
+        ctx.strokeRect(cx - T * 0.32, fy - T * 0.5, T * 0.64, T * 0.46);
+        if (!p.used) {
+          ctx.fillStyle = INK.sodium;
+          ctx.fillRect(cx - T * 0.32, fy - T * 0.34, T * 0.64, T * 0.07);
+        }
+        break;
+      case 'vent': {
+        ctx.fillStyle = '#1c1e21';
+        ctx.beginPath();
+        ctx.ellipse(cx, fy - T * 0.2, T * 0.36, T * 0.22, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        for (let k = -2; k <= 2; k++) {
+          ctx.beginPath();
+          ctx.moveTo(cx + k * T * 0.1, fy - T * 0.36);
+          ctx.lineTo(cx + k * T * 0.1, fy - T * 0.04);
+          ctx.stroke();
+        }
+        if (!p.used) {
+          for (let k = 0; k < 3; k++) {
+            const ph = (t * 0.6 + k / 3) % 1;
+            ctx.fillStyle = `rgba(216,207,184,${0.35 * (1 - ph)})`;
+            ctx.beginPath();
+            ctx.arc(cx + Math.sin(ph * 6 + k) * T * 0.1, fy - T * 0.3 - ph * T * 0.9, T * (0.1 + ph * 0.15), 0, Math.PI * 2);
+            ctx.fill();
+          }
+          ctx.fillStyle = INK.sodium;
+          ctx.fillRect(cx - T * 0.05, fy - T * 0.24, T * 0.1, T * 0.06);
+        }
+        break;
+      }
+      case 'nest': {
+        if (p.used) {
+          ctx.fillStyle = '#2a1a1c';
+          ctx.beginPath();
+          ctx.ellipse(cx, fy - T * 0.12, T * 0.4, T * 0.16, 0, 0, Math.PI * 2);
+          ctx.fill();
+          break;
+        }
+        const pulse = 1 + Math.sin(t * 3) * 0.06;
+        ctx.fillStyle = INK.fleshDark;
+        ctx.beginPath();
+        ctx.ellipse(cx, fy - T * 0.3, T * 0.42 * pulse, T * 0.32 * pulse, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = INK.flesh;
+        for (let k = 0; k < 4; k++) {
+          ctx.beginPath();
+          ctx.arc(cx + noise(p.id + k) * T * 0.25, fy - T * 0.34 + noise(p.id + k + 9) * T * 0.12, T * 0.07, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        break;
+      }
+      case 'ship': {
+        const s = T * 0.9;
+        ctx.fillStyle = INK.hullLit;
+        ctx.beginPath();
+        ctx.moveTo(cx - s * 0.8, fy);
+        ctx.lineTo(cx - s * 0.5, fy - s * 0.7);
+        ctx.lineTo(cx, fy - s * 1.1);
+        ctx.lineTo(cx + s * 0.5, fy - s * 0.7);
+        ctx.lineTo(cx + s * 0.8, fy);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = r.bossDead ? INK.toxin : INK.sodium;
+        ctx.globalAlpha = 0.6 + 0.4 * Math.sin(t * 3);
+        ctx.fillRect(cx - s * 0.18, fy - s * 0.75, s * 0.36, s * 0.12);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = INK.boneDim;
+        ctx.beginPath();
+        ctx.moveTo(cx - s * 0.6, fy);
+        ctx.lineTo(cx - s * 0.9, fy + s * 0.12);
+        ctx.moveTo(cx + s * 0.6, fy);
+        ctx.lineTo(cx + s * 0.9, fy + s * 0.12);
+        ctx.stroke();
+        break;
+      }
+    }
+  }
+
+  private drawBeacon(ctx: CanvasRenderingContext2D, x: number, y: number, used: boolean, t: number) {
+    const T = this.T;
+    const cx = this.sx(x) + T / 2;
+    const fy = this.sy(y) + T * 0.85;
+    ctx.strokeStyle = INK.boneDim;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, fy);
+    ctx.lineTo(cx, fy - T * 0.7);
+    ctx.stroke();
+    ctx.fillStyle = used ? INK.boneDim : INK.sodium;
+    ctx.globalAlpha = used ? 0.6 : 0.6 + 0.4 * Math.sin(t * 4);
+    ctx.beginPath();
+    ctx.arc(cx, fy - T * 0.72, T * 0.08, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  private drawMob(ctx: CanvasRenderingContext2D, r: RunState, m: Mob, t: number) {
+    const T = this.T;
+    const cx = this.sx(m.x) + T / 2;
+    const fy = this.sy(m.y) + T * 0.88;
+    const id = m.foes[0];
+    const size = CREATURE_SIZE[id] ?? 1;
+    const u = m.kind === 'boss' ? T * 1.1 : Math.min(T * 0.9, (T * 1.25) / size);
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.beginPath();
+    ctx.ellipse(cx, fy, T * 0.34, T * 0.1, 0, 0, Math.PI * 2);
+    ctx.fill();
+    if (m.kind === 'elite' || m.kind === 'boss') {
+      ctx.strokeStyle = m.kind === 'boss' ? INK.flesh : INK.sodium;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(cx, fy, T * 0.44, T * 0.15, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    const ambushed = m.kind === 'ambush';
+    if (ambushed) ctx.globalAlpha = 0.45 + 0.2 * Math.sin(t * 5);
+    drawCreature(ctx, id, cx, fy, u, { t: t + m.id, boil: Math.floor(t * 6) * 3, flash: 0, lunge: 0, dead: 0, seed: (m.id % 97) / 97, dim: 0 });
+    ctx.globalAlpha = 1;
+    if (m.foes.length > 1) {
+      ctx.fillStyle = INK.void;
+      ctx.fillRect(cx + T * 0.18, fy - T * 0.3, T * 0.34, T * 0.26);
+      ctx.fillStyle = INK.bone;
+      ctx.font = `700 ${Math.round(T * 0.24)}px "Barlow Condensed", sans-serif`;
+      ctx.fillText(`×${m.foes.length}`, cx + T * 0.21, fy - T * 0.1);
+    }
+    if (m.alerted) {
+      ctx.fillStyle = INK.flesh;
+      ctx.font = `700 ${Math.round(T * 0.45)}px "Bebas Neue", sans-serif`;
+      ctx.fillText('!', cx - T * 0.06, fy - size * u - T * 0.1);
+    }
+    void r;
+  }
+}
