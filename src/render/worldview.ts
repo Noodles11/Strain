@@ -290,6 +290,83 @@ export class WorldView {
         }
         break;
       }
+      case 'pod': {
+        // a glass tube with something suspended in it
+        const spent = (p.buys ?? 0) >= 2;
+        ctx.fillStyle = '#1c1e21';
+        ctx.fillRect(cx - T * 0.3, fy - T * 0.12, T * 0.6, T * 0.12);
+        ctx.fillStyle = spent ? '#2c3a3a' : INK.cryo;
+        ctx.globalAlpha = spent ? 0.6 : 0.55 + 0.15 * Math.sin(t * 2 + p.id);
+        ctx.fillRect(cx - T * 0.22, fy - T * 0.95, T * 0.44, T * 0.83);
+        ctx.globalAlpha = 1;
+        ctx.strokeRect(cx - T * 0.22, fy - T * 0.95, T * 0.44, T * 0.83);
+        if (!spent) {
+          ctx.fillStyle = INK.fleshDark;
+          ctx.beginPath();
+          ctx.ellipse(cx, fy - T * 0.55 + Math.sin(t * 1.3) * T * 0.04, T * 0.1, T * 0.16, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = INK.bone;
+          for (let k = 0; k < 3; k++) {
+            const ph = (t * 0.5 + k / 3) % 1;
+            ctx.fillRect(cx - T * 0.12 + k * T * 0.1, fy - T * 0.2 - ph * T * 0.65, 2, 2);
+          }
+        }
+        ctx.fillStyle = INK.hullLit;
+        ctx.fillRect(cx - T * 0.26, fy - T * 1.02, T * 0.52, T * 0.1);
+        break;
+      }
+      case 'terminal': {
+        ctx.fillStyle = INK.hullLit;
+        ctx.fillRect(cx - T * 0.3, fy - T * 0.75, T * 0.6, T * 0.72);
+        ctx.strokeRect(cx - T * 0.3, fy - T * 0.75, T * 0.6, T * 0.72);
+        const on = (p.buys ?? 0) < 2;
+        ctx.fillStyle = on ? INK.toxin : '#203024';
+        ctx.globalAlpha = on ? 0.6 + 0.3 * Math.sin(t * 5 + p.id) : 1;
+        ctx.fillRect(cx - T * 0.22, fy - T * 0.66, T * 0.44, T * 0.28);
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = INK.boneDim;
+        ctx.fillRect(cx - T * 0.18, fy - T * 0.28, T * 0.36, T * 0.1);
+        break;
+      }
+      case 'surgery': {
+        ctx.fillStyle = INK.boneDim;
+        ctx.fillRect(cx - T * 0.38, fy - T * 0.36, T * 0.76, T * 0.18);
+        ctx.strokeRect(cx - T * 0.38, fy - T * 0.36, T * 0.76, T * 0.18);
+        ctx.strokeStyle = INK.boneDim;
+        ctx.beginPath();
+        ctx.moveTo(cx - T * 0.3, fy - T * 0.18);
+        ctx.lineTo(cx - T * 0.3, fy);
+        ctx.moveTo(cx + T * 0.3, fy - T * 0.18);
+        ctx.lineTo(cx + T * 0.3, fy);
+        ctx.moveTo(cx, fy - T * 0.36);
+        ctx.lineTo(cx, fy - T * 0.95);
+        ctx.stroke();
+        ctx.fillStyle = INK.sodium;
+        ctx.beginPath();
+        ctx.arc(cx, fy - T * 0.95, T * 0.1, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      }
+      case 'event': {
+        if (p.used) {
+          ctx.fillStyle = '#26282c';
+          ctx.fillRect(cx - T * 0.2, fy - T * 0.2, T * 0.4, T * 0.2);
+          break;
+        }
+        const glow = 0.5 + 0.5 * Math.sin(t * 3 + p.id);
+        ctx.fillStyle = INK.signal;
+        ctx.globalAlpha = 0.25 + 0.2 * glow;
+        ctx.beginPath();
+        ctx.ellipse(cx, fy - T * 0.4, T * 0.4, T * 0.45, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = INK.bone;
+        ctx.font = `700 ${Math.round(T * 0.6)}px "Bebas Neue", sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.fillText('?', cx, fy - T * 0.2);
+        ctx.textAlign = 'left';
+        break;
+      }
       case 'ship': {
         const s = T * 0.9;
         ctx.fillStyle = INK.hullLit;

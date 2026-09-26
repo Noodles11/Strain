@@ -1,5 +1,6 @@
 import { Rng } from '../core/rng';
 import { DERELICT_AMBUSH, DERELICT_BOSS, DERELICT_ELITES, DERELICT_PACKS } from '../core/enemies';
+import { DERELICT_EVENTS } from '../core/events';
 
 export const T_WALL = 0;
 export const T_FLOOR = 1;
@@ -31,7 +32,10 @@ export interface Gate {
   b: number;
 }
 
-export type PoiKind = 'ship' | 'cache' | 'vent' | 'nest';
+export type PoiKind = 'ship' | 'cache' | 'vent' | 'nest' | 'pod' | 'terminal' | 'surgery' | 'event';
+
+/** Upgrade sites: spend biomass on the body or the decks. */
+export const SITE_KINDS: PoiKind[] = ['pod', 'terminal', 'surgery'];
 
 export interface Poi {
   id: number;
@@ -44,6 +48,12 @@ export interface Poi {
   hidden?: boolean;
   /** Nests: steps until the next spawn. */
   timer?: number;
+  /** Events: which one. */
+  event?: string;
+  /** Splice pods: the traits on offer. Terminals: 'tac:id' / 'exp:id' cards, made on first visit. */
+  offer?: string[];
+  /** Purchases made here. */
+  buys?: number;
 }
 
 export type MobKind = 'pack' | 'ambush' | 'elite' | 'boss' | 'spawn';
@@ -393,6 +403,30 @@ function tryGenerate(seed: number, tier: number, planet: string): World | null {
   if (wilds.length) { const z = rng.pick(wilds); addPoi('nest', z.id, spot(z.id), { timer: 150 }); }
   if (deeps.length) { const z = rng.pick(deeps); addPoi('nest', z.id, spot(z.id), { timer: 150 }); }
 
+  // upgrade sites, rotating kinds so a ring gets different ones
+  const siteZones = zones.filter((z) => z.ring !== 'lair');
+  let k = rng.int(SITE_KINDS.length);
+  for (const z of siteZones) {
+    if (z.ring !== 'safe' && rng.next() > 0.5) continue;
+    addPoi(SITE_KINDS[k++ % SITE_KINDS.length], z.id, spot(z.id));
+  }
+  for (const kind of SITE_KINDS) {
+    if (world.pois.some((p) => p.kind === kind)) continue;
+    const z = rng.pick(siteZones.filter((q) => q.ring !== 'safe').length ? siteZones.filter((q) => q.ring !== 'safe') : siteZones);
+    addPoi(kind, z.id, spot(z.id));
+  }
+  for (const p of world.pois) {
+    if (p.kind === 'pod') p.offer = rng.sample(['mgt', 'hde', 'rfx', 'foc', 'met', 'abr'], 2);
+  }
+  // events: most wild and deep sections have one, never the same twice
+  const evIds = rng.shuffle(DERELICT_EVENTS.map((e) => e.id));
+  let ei = 0;
+  for (const z of rng.shuffle(zones.filter((q) => q.ring === 'wild' || q.ring === 'deep'))) {
+    if (ei >= evIds.length || (ei >= 3 && rng.next() > 0.55)) continue;
+    const p = spot(z.id);
+    if (p) addPoi('event', z.id, p, { event: evIds[ei++] });
+  }
+
   // 10. Validate: boss reachable from the ship through forcible gates.
   if (!reachable(world, world.ship, { x: bossP[0], y: bossP[1] }, (g) => g.forcible)) return null;
   return world;
@@ -411,6 +445,8 @@ export function reachable(w: World, from: { x: number; y: number }, to: { x: num
       const ny = y + dy;
       if (!inBounds(w, nx, ny) || seen[idx(w, nx, ny)]) continue;
       const t = tileAt(w, nx, ny);
+      // things standing on a tile block it, except the ship and the target itself
+      if (!(nx === to.x && ny === to.y) && w.pois.some((p) => p.x === nx && p.y === ny && p.kind !== 'ship')) continue;
       const ok = t === T_FLOOR || t === T_HAZARD || (t === T_GATE && (gateAt(w, nx, ny)!.open || through(gateAt(w, nx, ny)!)));
       if (!ok) continue;
       seen[idx(w, nx, ny)] = 1;

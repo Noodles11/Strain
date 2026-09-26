@@ -5,10 +5,12 @@ import {
   botTurn, endTurn, flee, pickHand, playCard, startBattle, type BattleEv, type BattleState, type CardInst,
 } from './battle';
 import { DERELICT_AMBUSH, DERELICT_NEST, DERELICT_PACKS, ENEMIES, tierOf } from './enemies';
+import { checkChance, DERELICT_EVENTS, LOG_CODONS, LOGS, type Outcome } from './events';
+import { IMPLANT_POOL, IMPLANTS, implantMods, type ImplantMods } from './implants';
 import type { Meta } from './meta';
 import { Rng } from './rng';
 import {
-  addTraits, biomassYield, eatHeal, exploreHandSize, hazardDamage, maxIntegrity, maxOxygen, TRAITS, traits,
+  addTraits, biomassYield, eatHeal, exploreHandSize, hazardDamage, maxIntegrity, maxOxygen, SOMATIC_CAP, somaticCost, TRAIT_INFO, TRAITS, traits,
   type Trait, type Traits,
 } from './traits';
 import {
@@ -20,6 +22,8 @@ export const STORM_START = 600;
 export const STORM_EVERY = 40;
 export const NEST_EVERY = 150;
 export const ZONE_CODONS = 2;
+export const TERMINAL_PRICE = 5;
+export const SITE_BUYS = 2;
 export const KILL_CODONS = 2;
 
 export type Mode = 'explore' | 'battle' | 'loot' | 'reward' | 'dead' | 'won';
@@ -87,6 +91,16 @@ export interface RunState {
   landing: number;
   stats: { kills: number; fights: number; ambushed: number };
   msgs: string[];
+  implants: string[];
+  /** Somatic points bought this run (sets the pod price). */
+  somaticBought: number;
+  excised: number;
+  /** Logs found this run; banked at the end. */
+  logs: string[];
+  /** Logs the Printer already holds; they pay no Codons again. */
+  knownLogs: string[];
+  /** A result to show once (events). */
+  notice?: { title: string; text: string };
 }
 
 // ---- Setup ----
@@ -106,10 +120,11 @@ export function newRun(meta: Meta, seed: number): RunState {
     sealSteps: 0, stalk: false, flarePower: 0, beacons: [],
     mode: 'explore', bossDead: false, landing: 1,
     stats: { kills: 0, fights: 0, ambushed: 0 }, msgs: [],
+    implants: [], somaticBought: 0, excised: 0, logs: [], knownLogs: [...(meta.logs ?? [])],
   };
   const t = runTraits(r);
-  r.hp = maxIntegrity(t);
-  r.oxygen = maxOxygen(t);
+  r.hp = maxHp(r);
+  r.oxygen = maxO2(r);
   withRng(r, (rng) => { r.expDraw = rng.shuffle(exp.map((c) => c.uid)); });
   drawExp(r, exploreHandSize(t));
   reveal(r);
@@ -117,12 +132,33 @@ export function newRun(meta: Meta, seed: number): RunState {
   return r;
 }
 
+/** Fill fields that older saves don't have. */
+export function migrateRun(r: RunState): RunState {
+  r.implants ??= [];
+  r.somaticBought ??= 0;
+  r.excised ??= 0;
+  r.logs ??= [];
+  r.knownLogs ??= [];
+  r.zonesVisited ??= [r.world.landingZone];
+  return r;
+}
+
+export function mods(r: RunState): ImplantMods {
+  return implantMods(r.implants);
+}
+
 export function runTraits(r: RunState): Traits {
-  return addTraits(r.seq, r.somatic);
+  const t = addTraits(r.seq, r.somatic, mods(r).traits);
+  for (const k of TRAITS) t[k] = Math.max(0, t[k]);
+  return t;
 }
 
 export function maxHp(r: RunState): number {
-  return maxIntegrity(runTraits(r));
+  return Math.max(10, maxIntegrity(runTraits(r)) + mods(r).maxHp);
+}
+
+export function maxO2(r: RunState): number {
+  return maxOxygen(runTraits(r)) + mods(r).o2;
 }
 
 function withRng<T>(r: RunState, fn: (rng: Rng) => T): T {
@@ -189,8 +225,7 @@ export function playExp(r: RunState, uid: number): boolean {
   const c = expCard(r, uid);
   if (!c || !isSelfCard(c.id) || !expUsable(r, uid).ok) return false;
   const res = resolveCard(CARDS[c.id], runTraits(r));
-  const t = runTraits(r);
-  const mh = maxIntegrity(t);
+  const mh = maxHp(r);
   switch (CARDS[c.id].act) {
     case 'heal':
       if (r.hp >= mh) { say(r, 'Already whole.'); return false; }
@@ -314,7 +349,7 @@ export function isInteractable(r: RunState, x: number, y: number): boolean {
 function walkable(r: RunState, x: number, y: number): boolean {
   if (!passable(r.world, x, y)) return false;
   const p = poiAt(r, x, y);
-  if (p && (p.kind === 'vent' || p.kind === 'nest' || (p.kind === 'cache' && !p.used && !p.hidden))) return false;
+  if (p && p.kind !== 'ship' && !(p.kind === 'cache' && (p.used || p.hidden))) return false;
   return true;
 }
 
@@ -381,11 +416,11 @@ export function step(r: RunState, dx: number, dy: number): boolean {
   if (r.hp <= 0) { die(r, 'You fall and do not get up.'); return true; }
 
   if (nx === r.world.ship.x && ny === r.world.ship.y) {
-    r.oxygen = maxOxygen(t);
+    r.oxygen = maxO2(r);
     drawExp(r, exploreHandSize(t));
   }
   const b = r.beacons.find((q) => q.x === nx && q.y === ny && !q.used);
-  if (b) { b.used = true; r.oxygen = maxOxygen(t); say(r, 'Beacon: oxygen refilled.'); }
+  if (b) { b.used = true; r.oxygen = maxO2(r); say(r, 'Beacon: oxygen refilled.'); }
 
   reveal(r);
   const zone = zoneAt(r.world, nx, ny).id;
@@ -511,7 +546,7 @@ function checkAmbush(r: RunState) {
     const cheb = Math.max(Math.abs(m.x - r.x), Math.abs(m.y - r.y));
     if (cheb > 2) continue;
     const stealth = m.stealth + (isDark(r, m.x, m.y) ? 1 : 0) + (inStorm(r, m.x, m.y) ? 1 : 0);
-    if (Math.floor(foc / 2) >= stealth) {
+    if (Math.floor(foc / 2) >= stealth || mods(r).wetEye) {
       m.spotted = true;
       say(r, 'Something shifts inside the wall. You see it first.');
       continue;
@@ -538,9 +573,11 @@ function beginFight(r: RunState, m: Mob, how: 'player' | 'mob' | 'behind' | 'amb
 function startFight(r: RunState, foes: string[], tier: number, ctx: FightCtx, ambush: boolean, firstStrike: boolean, expose: number) {
   const t = runTraits(r);
   const tr = tierOf(tier);
+  const m = mods(r);
   const out = withRng(r, (rng) => startBattle({
-    foes, tier, deck: r.tac, traits: t, hp: r.hp, maxHp: maxIntegrity(t), biomass: r.biomass,
-    consumedRun: r.consumedRun, ambush, firstStrike, exposeStart: expose,
+    foes, tier, deck: r.tac, traits: t, hp: r.hp, maxHp: maxHp(r), biomass: r.biomass,
+    consumedRun: r.consumedRun, ambush, firstStrike, exposeStart: expose, plateStart: m.plateHde ? t.hde : 0,
+    mods: { firstCardFree: m.firstCardFree, thorns: m.thorns, tagStart: m.tagStart, energyFirst: m.energyFirst, drawFirst: m.drawFirst, fleeBonus: m.fleeBonus },
   }, rng, tr.bonus, tr.hp));
   r.battle = out.s;
   r.fight = ctx;
@@ -616,8 +653,7 @@ function afterBattleOp(r: RunState) {
     return;
   }
   // won
-  const t = runTraits(r);
-  r.oxygen = Math.min(maxOxygen(t), r.oxygen + 2);
+  r.oxygen = Math.min(maxO2(r), r.oxygen + 2 + (r.hp > maxHp(r) / 2 ? mods(r).winO2 : 0));
   const kills = b.foes.length;
   r.stats.kills += kills;
   let mult = ctx.reward ? 1 : 0.5;
@@ -638,12 +674,15 @@ function afterBattleOp(r: RunState) {
       codons = 20 * r.world.tier;
       r.bossDead = true;
       title = 'The First is dead';
+      findLog(r, 'derelict-5');
       say(r, 'The First is dead. Return to the ship to launch.');
     } else if (ctx.kind === 'elite') {
       codons = 8;
       biomass = 6;
       options = offerCards(r, 'tac');
       title = 'Elite remains';
+      const got = addImplant(r, 'random');
+      if (got) title = `Elite remains · ${IMPLANTS[got].name} implanted`;
     } else if (ctx.reward) {
       codons = kills * KILL_CODONS;
       options = offerCards(r, 'tac');
@@ -670,8 +709,8 @@ export function lootChoose(r: RunState, i: number, how: 'eat' | 'render') {
   const c = r.loot?.[i];
   if (!c || c.done || r.mode !== 'loot') return;
   c.done = how;
-  if (how === 'eat') r.hp = Math.min(maxHp(r), r.hp + eatValue(r, c));
-  else r.biomass += renderValue(r, c);
+  if (how === 'eat') { r.hp = Math.min(maxHp(r), r.hp + eatValue(r, c)); r.biomass += mods(r).eatBio; }
+  else r.biomass += renderValue(r, c) + mods(r).renderBio;
   if (r.loot!.every((x) => x.done)) lootDone(r);
 }
 
@@ -727,6 +766,8 @@ export interface Action {
   label: string;
   detail: string;
   ok: boolean;
+  /** A card this action prints, shown as a card face. */
+  card?: string;
 }
 
 function adjacent(r: RunState, x: number, y: number): boolean {
@@ -755,6 +796,13 @@ export function describeAt(r: RunState, x: number, y: number): { title: string; 
     case 'vent': return { title: p.used ? 'Cold vent (spent)' : 'Warm vent', text: 'Rest: heal, refill oxygen and your exploration hand. Everything you killed elsewhere comes back.' };
     case 'nest': return { title: 'Nest', text: 'It breathes. Every so often something crawls out.' };
     case 'ship': return { title: 'Your ship', text: r.bossDead ? 'Ready to launch.' : 'Oxygen and exploration hand refill here.' };
+    case 'pod': return { title: 'Splice pod', text: `Pour biomass in to push this body past its sequence. +1 to a trait for this run (max +${SOMATIC_CAP} each). ${SITE_BUYS - (p.buys ?? 0)} splice${SITE_BUYS - (p.buys ?? 0) === 1 ? '' : 's'} left in it.` };
+    case 'terminal': return { title: 'Printer terminal', text: `It still prints techniques. ${TERMINAL_PRICE} biomass each, ${SITE_BUYS - (p.buys ?? 0)} left.` };
+    case 'surgery': return { title: 'Surgery bay', text: `Cut a card out of a deck for good. ${exciseCost(r)} biomass.` };
+    case 'event': {
+      const ev = DERELICT_EVENTS.find((e) => e.id === p.event)!;
+      return p.used ? { title: ev.title, text: 'Nothing more here.' } : { title: ev.title, text: ev.text };
+    }
   }
 }
 
@@ -797,6 +845,30 @@ export function actionsAt(r: RunState, x: number, y: number): Action[] {
     cardAction('cut', (pw) => `burn it (needs 3, have ${pw})`, 3);
     out.push({ id: 'attack', label: 'Attack the nest', detail: `${DERELICT_NEST.length} guardians`, ok: near });
   }
+  if (p.kind === 'pod') {
+    const cost = somaticCost(r.somaticBought);
+    for (const k of (p.offer ?? []) as Trait[]) {
+      const capped = r.somatic[k] >= SOMATIC_CAP;
+      out.push({ id: `splice:${k}`, label: `Splice +1 ${TRAIT_INFO[k].name}`, detail: capped ? 'at its limit' : `${cost} biomass`, ok: near && !capped && (p.buys ?? 0) < SITE_BUYS && r.biomass >= cost });
+    }
+  }
+  if (p.kind === 'terminal') {
+    if (!p.offer) p.offer = [...offerCards(r, 'tac').map((id) => `tac:${id}`), ...offerCards(r, 'exp').slice(0, 1).map((id) => `exp:${id}`)];
+    p.offer.forEach((o, i) => {
+      const [deck, id] = o.split(':');
+      out.push({ id: `buy:${i}`, label: CARDS[id].name, detail: `${deck === 'tac' ? 'tactical' : 'exploration'} · ${TERMINAL_PRICE} biomass`, ok: near && (p.buys ?? 0) < SITE_BUYS && r.biomass >= TERMINAL_PRICE, card: id });
+    });
+  }
+  if (p.kind === 'surgery') {
+    out.push({ id: 'surgery', label: 'Lie down', detail: `${exciseCost(r)} biomass per cut`, ok: near && r.biomass >= exciseCost(r) });
+  }
+  if (p.kind === 'event' && !p.used) {
+    const ev = DERELICT_EVENTS.find((e) => e.id === p.event)!;
+    ev.options.forEach((o, i) => {
+      const detail = o.check ? `${TRAIT_INFO[o.check.t].name} ${o.check.at} · ${Math.round(checkChance(t[o.check.t], o.check.at) * 100)}%` : '';
+      out.push({ id: `ev:${i}`, label: o.label, detail, ok: near });
+    });
+  }
   if (p.kind === 'ship') {
     out.push({ id: 'launch', label: 'Launch', detail: r.bossDead ? 'Leave the derelict' : 'Kill The First first', ok: near && r.bossDead });
   }
@@ -817,6 +889,9 @@ export function doAction(r: RunState, x: number, y: number, id: string): boolean
     reveal(r);
     return true;
   }
+  if (p && id.startsWith('splice:')) { splice(r, p, id.slice(7) as Trait); return true; }
+  if (p && id.startsWith('buy:')) { terminalBuy(r, p, Number(id.slice(4))); return true; }
+  if (p && id.startsWith('ev:')) { eventChoose(r, p, Number(id.slice(3))); return true; }
   switch (id) {
     case 'force':
       if (g) { r.hp -= forceGateCost(r, g.rating); g.open = true; say(r, 'You force it. Something tears.'); }
@@ -834,23 +909,157 @@ export function doAction(r: RunState, x: number, y: number, id: string): boolean
 function openCache(r: RunState, p: Poi, extra: boolean) {
   p.used = true;
   const roll = withRng(r, (rng) => {
+    const implant = rng.next() < 0.15;
     const card = extra || rng.next() < 0.6;
-    return { card, bio: extra ? 4 : card ? 2 : 5 + rng.int(5), deck: (rng.next() < 0.7 ? 'tac' : 'exp') as DeckKind };
+    return { implant, card, bio: extra ? 4 : card ? 2 : 5 + rng.int(5), deck: (rng.next() < 0.7 ? 'tac' : 'exp') as DeckKind };
   });
   r.biomass += roll.bio;
+  if (roll.implant) {
+    const got = addImplant(r, 'random');
+    if (got) { r.notice = { title: 'Cache · implant', text: `${IMPLANTS[got].name}: ${IMPLANTS[got].text} +${roll.bio} biomass.` }; return; }
+  }
   if (roll.card) {
     r.reward = { title: 'Cache', options: offerCards(r, roll.deck), deck: roll.deck, biomass: roll.bio, codons: 0 };
     r.mode = 'reward';
   } else say(r, `Cache: +${roll.bio} biomass.`);
 }
 
+// ---- Upgrade sites ----
+
+function splice(r: RunState, p: Poi, k: Trait) {
+  const before = maxHp(r);
+  r.biomass -= somaticCost(r.somaticBought);
+  r.somaticBought += 1;
+  r.somatic[k] += 1;
+  p.buys = (p.buys ?? 0) + 1;
+  r.hp += Math.max(0, maxHp(r) - before);
+  const o2 = maxO2(r);
+  if (r.oxygen > o2) r.oxygen = o2;
+  say(r, `The pod floods you. ${TRAIT_INFO[k].name} +1 for this print.`);
+}
+
+function terminalBuy(r: RunState, p: Poi, i: number) {
+  const o = p.offer?.[i];
+  if (!o) return;
+  const [deck, id] = o.split(':');
+  r.biomass -= TERMINAL_PRICE;
+  p.buys = (p.buys ?? 0) + 1;
+  p.offer = p.offer!.filter((_, k) => k !== i);
+  const inst = { uid: r.nextUid++, id };
+  if (deck === 'tac') r.tac.push(inst);
+  else { r.exp.push(inst); r.expDiscard.push(inst.uid); }
+  say(r, `The terminal prints ${CARDS[id].name}.`);
+}
+
+export function exciseCost(r: RunState): number {
+  return 4 + 2 * r.excised;
+}
+
+/** Can this card be cut? Decks keep a minimum size. */
+export function canExcise(r: RunState, deck: DeckKind, uid: number): boolean {
+  const list = deck === 'tac' ? r.tac : r.exp;
+  const min = deck === 'tac' ? 5 : 3;
+  return list.length > min && list.some((c) => c.uid === uid) && r.biomass >= exciseCost(r);
+}
+
+export function excise(r: RunState, deck: DeckKind, uid: number): boolean {
+  if (!canExcise(r, deck, uid)) return false;
+  r.biomass -= exciseCost(r);
+  r.excised += 1;
+  if (deck === 'tac') r.tac = r.tac.filter((c) => c.uid !== uid);
+  else {
+    const name = CARDS[r.exp.find((c) => c.uid === uid)!.id].name;
+    r.exp = r.exp.filter((c) => c.uid !== uid);
+    r.expHand = r.expHand.filter((u) => u !== uid);
+    r.expDraw = r.expDraw.filter((u) => u !== uid);
+    r.expDiscard = r.expDiscard.filter((u) => u !== uid);
+    say(r, `${name} is cut out.`);
+    return true;
+  }
+  say(r, 'The bay hums. One less technique to carry.');
+  return true;
+}
+
+// ---- Implants, logs, events ----
+
+/** Adds an implant (or a random one you lack). Returns its id, or null if you have them all. */
+export function addImplant(r: RunState, id: string): string | null {
+  let pick = id;
+  if (id === 'random' || r.implants.includes(id)) {
+    const free = IMPLANT_POOL.filter((q) => !r.implants.includes(q));
+    if (!free.length) return null;
+    pick = withRng(r, (rng) => rng.pick(free));
+  }
+  const before = maxHp(r);
+  r.implants.push(pick);
+  const after = maxHp(r);
+  if (after > before) r.hp += after - before;
+  r.hp = Math.min(r.hp, after);
+  r.oxygen = Math.min(r.oxygen, maxO2(r));
+  return pick;
+}
+
+function findLog(r: RunState, id: string): boolean {
+  if (r.logs.includes(id)) return false;
+  r.logs.push(id);
+  if (!r.knownLogs.includes(id)) { r.codons += LOG_CODONS; return true; }
+  return false;
+}
+
+function eventChoose(r: RunState, p: Poi, i: number) {
+  const ev = DERELICT_EVENTS.find((e) => e.id === p.event)!;
+  const o = ev.options[i];
+  if (!o || p.used) return;
+  p.used = true;
+  const t = runTraits(r);
+  const ok = !o.check || withRng(r, (rng) => rng.next() < checkChance(t[o.check!.t], o.check!.at));
+  const out: Outcome = ok ? o.win : o.lose ?? { text: 'Nothing happens.' };
+  const lines = [out.text];
+  const mh = () => maxHp(r);
+  if (out.biomass) { r.biomass += out.biomass; lines.push(`+${out.biomass} biomass.`); }
+  if (out.o2) { r.oxygen = Math.min(maxO2(r), r.oxygen + out.o2); lines.push(`+${out.o2} oxygen.`); }
+  if (out.codons) { r.codons += out.codons; lines.push(`+${out.codons} Codons.`); }
+  if (out.somatic) {
+    const k = out.somatic === 'random' ? withRng(r, (rng) => rng.pick(TRAITS.filter((q) => r.somatic[q] < SOMATIC_CAP))) : out.somatic;
+    if (k && r.somatic[k] < SOMATIC_CAP) {
+      const before = mh();
+      r.somatic[k] += 1;
+      r.hp += Math.max(0, mh() - before);
+      lines.push(`${TRAIT_INFO[k].name} +1 for this print.`);
+    }
+  }
+  if (out.implant) {
+    const got = addImplant(r, out.implant);
+    if (got) lines.push(`Implant: ${IMPLANTS[got].name}. ${IMPLANTS[got].text}`);
+  }
+  if (out.hp) {
+    r.hp = Math.min(mh(), r.hp + out.hp);
+    lines.push(out.hp > 0 ? `You mend ${out.hp}.` : `−${-out.hp} integrity.`);
+  }
+  if (out.loseCard && r.tac.length > 5) {
+    const lost = withRng(r, (rng) => rng.pick(r.tac));
+    r.tac = r.tac.filter((c) => c !== lost);
+    lines.push(`${CARDS[lost.id].name} is gone from your deck.`);
+  }
+  if (out.log) {
+    const fresh = findLog(r, out.log);
+    lines.push(`Log found: “${LOGS[out.log].title}”${fresh ? ` (+${LOG_CODONS} Codons)` : ''}. ${LOGS[out.log].text}`);
+  }
+  r.notice = { title: `${ev.title} · ${ok ? (o.check ? 'success' : o.label) : 'failed'}`, text: lines.join(' ') };
+  if (r.hp <= 0) { die(r, 'The derelict keeps you.'); return; }
+  if (out.card) {
+    r.reward = { title: ev.title, options: offerCards(r, out.card), deck: out.card, biomass: 0, codons: 0 };
+    r.mode = 'reward';
+  }
+}
+
 function rest(r: RunState, p: Poi) {
   const t = runTraits(r);
-  const mh = maxIntegrity(t);
+  const mh = maxHp(r);
   p.used = true;
   const heal = Math.floor(mh * 0.25) + t.met;
   r.hp = Math.min(mh, r.hp + heal);
-  r.oxygen = maxOxygen(t);
+  r.oxygen = maxO2(r);
   drawExp(r, exploreHandSize(t));
   for (const z of r.world.zones) if (z.id !== p.zone) respawnZone(r, z.id);
   say(r, `You rest. +${heal} integrity. Somewhere, things stir again.`);
@@ -881,7 +1090,7 @@ export function travel(r: RunState, x: number, y: number): boolean {
   r.y = y;
   if (x === r.world.ship.x && y === r.world.ship.y) {
     const t = runTraits(r);
-    r.oxygen = maxOxygen(t);
+    r.oxygen = maxO2(r);
     drawExp(r, exploreHandSize(t));
   }
   reveal(r);

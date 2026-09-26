@@ -169,3 +169,12 @@ b.foc { color: var(--foc); } b.met { color: var(--met); } b.abr { color: var(--a
 .row .btn { flex: 1; }
 .big-msg { font-family: var(--display); font-size: 54px; line-height: 0.9; margin: 20vh 0 0; }
 .minimap { width: 100%; image-rendering: pixelated; border: 2px solid var(--bone); background: var(--ink); }
+
+.nobuy { opacity: 0.55; }
+.cards3 [data-act], .grid [data-cut] { cursor: pointer; }
+.implants { display: flex; flex-direction: column; gap: 4px; }
+.imp { display: flex; gap: 8px; font-size: 14px; align-items: baseline; }
+.imp > b { color: var(--signal); width: 16px; text-align: center; }
+.codex summary { cursor: pointer; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--sodium); }
+.codex p { font-size: 15px; line-height: 1.35; margin: 8px 0; }
+sup { font-size: 10px; }

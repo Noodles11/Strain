@@ -1,9 +1,11 @@
 import { aliveFoes, canFlee, cardBonus, currentIntent, fleeChance, intentNumbers, playable, resolved, type BattleEv } from '../core/battle';
 import { CARDS } from '../core/cards';
 import { ENEMIES } from '../core/enemies';
+import { LOGS } from '../core/events';
+import { IMPLANTS } from '../core/implants';
 import { canRaise, loadMeta, newMeta, raise, RUN_KEY, saveMeta, settleRun, type Meta } from '../core/meta';
 import {
-  actionsAt, bEnd, bFlee, bPick, bPlay, describeAt, doAction, eatValue, expCard, expUsable, isInteractable, isSelfCard,
+  actionsAt, bEnd, bFlee, bPick, bPlay, canExcise, describeAt, doAction, eatValue, excise, exciseCost, expCard, expUsable, isInteractable, isSelfCard, migrateRun,
   lootChoose, lootDone, maxHp, mobAt, newRun, pathTo, playExp, renderValue, rewardPick, runTraits, step, stormIn,
   takeEvents, travel, travelPoints, type RunState,
 } from '../core/run';
@@ -24,6 +26,7 @@ type Sheet =
   | { kind: 'map' }
   | { kind: 'deck'; tab: 'tac' | 'exp' }
   | { kind: 'menu' }
+  | { kind: 'surgery'; tab: 'tac' | 'exp' }
   | null;
 
 function storage(): Storage | null {
@@ -79,7 +82,7 @@ export class App {
       const raw = this.store?.getItem(RUN_KEY);
       if (raw) {
         const r = JSON.parse(raw) as RunState;
-        if (r.v === 1) this.run = r;
+        if (r.v === 1) this.run = migrateRun(r);
       }
     } catch { this.run = null; }
     this.showHub();
@@ -135,6 +138,8 @@ export class App {
            <div class="row"><button class="btn danger" data-go="abandon">Abandon that print</button></div>`
         : `<div class="row"><button class="btn primary" data-go="launch">Print ${cloneName(m.clone)}</button></div>`}
       <div class="sub">Runs ${m.runs} · Cleared ${m.wins} · Codons earned ${m.totalCodons}</div>
+      <details class="codex"><summary>Codex · ${m.logs.length}/${Object.keys(LOGS).length} logs</summary>
+        ${Object.entries(LOGS).map(([id, l]) => m.logs.includes(id) ? `<p><b>${esc(l.title)}</b><br>${esc(l.text)}</p>` : '<p class="sub">— not found —</p>').join('')}</details>
       <div class="row"><button class="btn small danger" data-go="wipe">Erase all progress</button></div>
     </div>`;
     this.root.querySelectorAll<HTMLButtonElement>('[data-raise]').forEach((b) => b.addEventListener('click', () => {
@@ -162,7 +167,7 @@ export class App {
 
   private endRun(outcome: 'dead' | 'won') {
     if (!this.run) return;
-    settleRun(this.meta, this.run.codons, outcome);
+    settleRun(this.meta, this.run.codons, outcome, this.run.logs);
     saveMeta(this.store, this.meta);
     this.clearRun();
     this.showHub();
@@ -677,6 +682,9 @@ export class App {
         <p>${rw.biomass ? `+${rw.biomass} biomass. ` : ''}${rw.codons ? `+${rw.codons} Codons. ` : ''}Take one ${rw.deck === 'tac' ? 'tactical' : 'exploration'} card, or none.</p>
         <div class="cards3">${rw.options.map((id, i) => `<div data-pick="${i}">${cardHtml(id, t)}</div>`).join('')}</div>
         <button class="btn" data-pick="-1">Take nothing</button></div></div>`;
+    } else if (r.notice) {
+      html = `<div class="sheet-wrap"><div class="sheet frame"><h2>${esc(r.notice.title)}</h2><p>${esc(r.notice.text)}</p>
+        <button class="btn primary" data-o="notice">Go on</button></div></div>`;
     } else if (this.sheet) {
       html = this.sheetHtml(this.sheet, r);
     }
@@ -688,11 +696,21 @@ export class App {
       this.saveRun();
       this.syncLayout();
     }));
+    o.querySelectorAll<HTMLElement>('[data-cut]').forEach((b) => b.addEventListener('click', () => {
+      const s = this.sheet;
+      if (s?.kind !== 'surgery') return;
+      excise(r, s.tab, Number(b.dataset.cut));
+      this.saveRun();
+      this.refresh();
+    }));
     o.querySelectorAll<HTMLElement>('[data-act]').forEach((b) => b.addEventListener('click', () => {
       const s = this.sheet;
       if (s?.kind !== 'action') return;
-      this.sheet = null;
-      doAction(r, s.x, s.y, b.dataset.act!);
+      if (b.dataset.act === 'surgery') { this.sheet = { kind: 'surgery', tab: 'tac' }; this.refresh(); return; }
+      const id = b.dataset.act!;
+      const keep = id.startsWith('splice:') || id.startsWith('buy:');
+      this.sheet = keep ? s : null;
+      doAction(r, s.x, s.y, id);
       if (r.mode === 'battle') { this.afterAction(); return; }
       this.saveRun();
       this.refresh();
@@ -705,12 +723,14 @@ export class App {
       this.refresh();
     }));
     o.querySelectorAll<HTMLElement>('[data-tab]').forEach((b) => b.addEventListener('click', () => {
-      this.sheet = { kind: 'deck', tab: b.dataset.tab as 'tac' | 'exp' };
+      const tab = b.dataset.tab as 'tac' | 'exp';
+      this.sheet = this.sheet?.kind === 'surgery' ? { kind: 'surgery', tab } : { kind: 'deck', tab };
       this.refresh();
     }));
     o.querySelectorAll<HTMLElement>('[data-o]').forEach((b) => b.addEventListener('click', () => {
       const k = b.dataset.o;
       if (k === 'close') { this.sheet = null; this.refresh(); }
+      else if (k === 'notice') { r.notice = undefined; this.saveRun(); this.refresh(); }
       else if (k === 'hub') this.endRun('dead');
       else if (k === 'hub-won') this.endRun('won');
       else if (k === 'lootdone') { lootDone(r); this.saveRun(); this.syncLayout(); }
@@ -745,7 +765,10 @@ export class App {
         const d = describeAt(r, s.x, s.y);
         const acts = actionsAt(r, s.x, s.y);
         if (!d) return '';
-        return wrap(`<h2>${esc(d.title)}</h2><p>${esc(d.text)}</p><div class="acts">${acts.map((a) => `<button class="btn act" data-act="${a.id}" ${a.ok ? '' : 'disabled'}>${esc(a.label)} <small>${esc(a.detail)}</small></button>`).join('') || '<p>Nothing to do here.</p>'}</div>`);
+        const cards = acts.filter((a) => a.card);
+        const plain = acts.filter((a) => !a.card);
+        const grid = cards.length ? `<div class="cards3">${cards.map((a) => `<div data-act="${a.id}" class="${a.ok ? '' : 'nobuy'}">${cardHtml(a.card!, t, { off: !a.ok })}<div class="why">${esc(a.detail)}</div></div>`).join('')}</div>` : '';
+        return wrap(`<h2>${esc(d.title)}</h2><p>${esc(d.text)}</p><p class="why">◆ ${r.biomass} biomass</p>${grid}<div class="acts">${plain.map((a) => `<button class="btn act" data-act="${a.id}" ${a.ok ? '' : 'disabled'}>${esc(a.label)} <small>${esc(a.detail)}</small></button>`).join('') || (grid ? '' : '<p>Nothing to do here.</p>')}</div>`);
       }
       case 'map': {
         const pts = travelPoints(r).map((p) => `<button class="btn small" data-travel="${p.x},${p.y}">${esc(p.label)}</button>`).join('');
@@ -755,15 +778,28 @@ export class App {
         const list = s.tab === 'tac' ? r.tac : r.exp;
         return wrap(`<h2>Deck</h2><div class="tabs"><button class="btn small ${s.tab === 'tac' ? 'on' : ''}" data-tab="tac">Tactical ${r.tac.length}</button>
           <button class="btn small ${s.tab === 'exp' ? 'on' : ''}" data-tab="exp">Exploration ${r.exp.length}</button></div>
-          <p>Every number reads your traits: ${TRAITS.map((k) => `<b class="${k}">${TRAIT_INFO[k].short} ${t[k]}</b>`).join(' ')}</p>
+          <p>Every number reads your traits: ${TRAITS.map((k) => `<b class="${k}">${TRAIT_INFO[k].short} ${t[k]}${r.somatic[k] ? `<sup>+${r.somatic[k]}</sup>` : ''}</b>`).join(' ')}</p>
+          ${this.implantList(r)}
           <div class="grid">${list.map((c) => cardHtml(c.id, t)).join('')}</div>`);
       }
+      case 'surgery': {
+        const list = s.tab === 'tac' ? r.tac : r.exp;
+        return wrap(`<h2>Surgery bay</h2><p>Tap a card to cut it out for ${exciseCost(r)} biomass (◆ ${r.biomass}). Decks keep at least ${s.tab === 'tac' ? 5 : 3} cards.</p>
+          <div class="tabs"><button class="btn small ${s.tab === 'tac' ? 'on' : ''}" data-tab="tac">Tactical ${r.tac.length}</button>
+          <button class="btn small ${s.tab === 'exp' ? 'on' : ''}" data-tab="exp">Exploration ${r.exp.length}</button></div>
+          <div class="grid">${list.map((c) => `<div data-cut="${c.uid}" class="${canExcise(r, s.tab, c.uid) ? '' : 'nobuy'}">${cardHtml(c.id, t, { off: !canExcise(r, s.tab, c.uid) })}</div>`).join('')}</div>`);
+      }
       case 'menu':
-        return wrap(`<h2>${cloneName(r.clone)}</h2><p>Steps ${r.steps} · fights ${r.stats.fights} · kills ${r.stats.kills} · ambushed ${r.stats.ambushed}</p>
+        return wrap(`<h2>${cloneName(r.clone)}</h2><p>Steps ${r.steps} · fights ${r.stats.fights} · kills ${r.stats.kills} · ambushed ${r.stats.ambushed}</p>${this.implantList(r)}
           <div class="acts"><button class="btn" data-o="print">Print effect: ${this.printOn ? 'on' : 'off'}</button>
           <button class="btn" data-o="suspend">Back to the Printer (keep this run)</button>
           <button class="btn danger" data-o="abandon">Abandon this clone</button></div>`);
     }
+  }
+
+  private implantList(r: RunState): string {
+    if (!r.implants.length) return '<p class="why">No implants yet.</p>';
+    return `<div class="implants">${r.implants.map((id) => `<div class="imp"><b>${IMPLANTS[id].glyph}</b> <span><b>${esc(IMPLANTS[id].name)}</b> · ${esc(IMPLANTS[id].text)}</span></div>`).join('')}</div>`;
   }
 
   private drawMinimap(c: HTMLCanvasElement, r: RunState) {
@@ -789,6 +825,8 @@ export class App {
       if (p.kind === 'vent' && !p.used) dot(p.x, p.y, INK.bone);
       if (p.kind === 'cache' && !p.used) dot(p.x, p.y, INK.boneDim);
       if (p.kind === 'nest' && !p.used) dot(p.x, p.y, INK.flesh);
+      if (p.kind === 'pod' || p.kind === 'terminal' || p.kind === 'surgery') dot(p.x, p.y, INK.cryo, 1);
+      if (p.kind === 'event' && !p.used) dot(p.x, p.y, INK.signal, 1);
     }
     for (const m of w.mobs) if (m.alive && (m.kind === 'boss' || m.kind === 'elite') && w.seen[idx(w, m.x, m.y)]) dot(m.x, m.y, m.kind === 'boss' ? INK.flesh : INK.signal, 2);
     for (const b of r.beacons) dot(b.x, b.y, INK.sodium);

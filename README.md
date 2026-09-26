@@ -7,6 +7,8 @@ You are a clone. Your **traits** grow between prints; every card reads them, so 
 - **Two decks**: tactical (battles) and exploration (the open world). Cards never mutate.
 - **Battles** in Game Boy grammar: foe upper right, clone from behind lower left, a text box, cards as moves. Up to 3 enemies.
 - **Open world**: a generated derelict with gates, caches, vents, nests, roaming and ambushing mobs, respawns and a storm clock.
+- **Upgrade sites**: splice pods (+1 trait for the run), printer terminals (buy cards), surgery bays (cut cards).
+- **Events** with trait checks, **implants** (passive run items) and **log fragments** for the codex.
 - **The Printer**: spend Codons between runs to raise your sequence. Codons are always kept on death.
 
 Design: [docs/DESIGN.md](docs/DESIGN.md). Build status: [docs/STATUS.md](docs/STATUS.md).
@@ -37,7 +39,9 @@ src/core/     Rules. Pure TypeScript, seeded RNG, no DOM.
   cards.ts    Card data as formulas, thresholds, card text
   enemies.ts  Enemy trait blocks, tiers, derelict packs
   battle.ts   Battle engine, intents, initiative, ambush, flee, autoplay bot
-  run.ts      A run: movement, mobs, ambushes, respawns, storm, gates, loot, rewards
+  run.ts      A run: movement, mobs, ambushes, respawns, storm, gates, sites, events, loot
+  implants.ts Implant data and their combined effects
+  events.ts   Derelict events, log fragments, check odds
   meta.ts     Codons, sequence levels, save
 src/world/    gen.ts: planet map generation (zones, links, gates, POIs, validation)
 src/render/   Canvas: overworld, battle scene, creatures, clone, calm print pass

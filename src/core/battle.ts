@@ -82,9 +82,25 @@ export interface BattleState {
   nextUid: number;
   noFlee: boolean;
   log: string[];
+  mods: BattleMods;
+  /** Cards played this fight. */
+  played: number;
 }
 
+/** Implant effects that reach into battles. */
+export interface BattleMods {
+  firstCardFree: boolean;
+  thorns: number;
+  tagStart: number;
+  energyFirst: number;
+  drawFirst: number;
+  fleeBonus: number;
+}
+
+export const NO_MODS: BattleMods = { firstCardFree: false, thorns: 0, tagStart: 0, energyFirst: 0, drawFirst: 0, fleeBonus: 0 };
+
 export interface BattleSetup {
+  mods?: BattleMods;
   foes: string[];
   tier: number;
   deck: CardInst[];
@@ -144,7 +160,10 @@ export function startBattle(setup: BattleSetup, rng: Rng, tierBonus: number, hpM
     nextUid: 5000,
     noFlee: foes.some((f) => ENEMIES[f.id].rank),
     log: [],
+    mods: setup.mods ?? NO_MODS,
+    played: 0,
   };
+  if (s.mods.tagStart && foes[0]) foes[0].tag += s.mods.tagStart;
   const ev: BattleEv[] = [];
   const names = foes.map(NAME);
   if (s.ambush) ev.push({ k: 'text', s: `AMBUSH! ${names.join(' and ')} ${names.length > 1 ? 'drop' : 'drops'} on you!` });
@@ -158,6 +177,7 @@ export function startBattle(setup: BattleSetup, rng: Rng, tierBonus: number, hpM
     if (!s.ambush) ev.push({ k: 'text', s: `${names[0]} is faster!` });
     s.noFlee = true;
     enemyTurn(s, rng, ev);
+    checkEnd(s, ev);
     if (s.phase !== 'player') return { s, ev };
     s.noFlee = foes.some((f) => ENEMIES[f.id].rank) ;
   }
@@ -189,10 +209,16 @@ export function cardBonus(s: BattleState, c: CardInst): { dmg: number; plate: nu
   return { dmg, plate };
 }
 
+/** Energy a card costs right now (Spinal Relay makes the first one free). */
+export function costOf(s: BattleState, c: CardInst): number {
+  const r = resolved(s, c);
+  return s.mods.firstCardFree && s.played === 0 ? 0 : r.cost;
+}
+
 export function playable(s: BattleState, c: CardInst): { ok: boolean; why?: string } {
   if (s.phase !== 'player' || s.pending) return { ok: false };
   const r = resolved(s, c);
-  if (r.cost > s.energy) return { ok: false, why: 'Not enough energy' };
+  if (costOf(s, c) > s.energy) return { ok: false, why: 'Not enough energy' };
   if (r.bioCost > s.biomass) return { ok: false, why: 'Not enough biomass' };
   const healOnly = r.fx.every((e) => e.op === 'heal');
   if (healOnly && s.player.hp >= s.player.maxHp) return { ok: false, why: 'Already whole' };
@@ -212,8 +238,9 @@ export function playCard(s: BattleState, uid: number, targetUid: number | undefi
   const def = CARDS[card.id];
   const r = resolved(s, card);
   const bonus = cardBonus(s, card);
-  s.energy -= r.cost;
+  s.energy -= costOf(s, card);
   s.biomass -= r.bioCost;
+  s.played += 1;
   s.hand.splice(idx, 1);
   ev.push({ k: 'text', s: `You use ${def.name.toUpperCase()}!` });
 
@@ -407,12 +434,12 @@ function startPlayerTurn(s: BattleState, rng: Rng, _ev: BattleEv[], drawPenalty 
   s.turn += 1;
   s.player.plate = s.player.keep;
   s.player.keep = 0;
-  s.energy = energyPerTurn(effTraits(s));
+  s.energy = energyPerTurn(effTraits(s)) + (s.turn === 1 ? s.mods.energyFirst : 0);
   for (const c of s.hand) {
     if (CARDS[c.id].dyn === 'unscarred') c.bonus = s.lostHp ? 0 : (c.bonus ?? 0) + 2;
   }
   s.lostHp = false;
-  drawCards(s, Math.max(0, handSize(effTraits(s)) - drawPenalty), rng);
+  drawCards(s, Math.max(0, handSize(effTraits(s)) - drawPenalty + (s.turn === 1 ? s.mods.drawFirst : 0)), rng);
 }
 
 export function endTurn(s: BattleState, rng: Rng): BattleEv[] {
@@ -429,6 +456,7 @@ export function endTurn(s: BattleState, rng: Rng): BattleEv[] {
   for (const f of aliveFoes(s)) if (f.expose > 0) f.expose -= 1;
   s.noFlee = s.foes.some((f) => ENEMIES[f.id].rank);
   enemyTurn(s, rng, ev);
+  checkEnd(s, ev);
   if (s.phase === 'player') startPlayerTurn(s, rng, ev);
   return ev;
 }
@@ -495,6 +523,11 @@ function enemyTurn(s: BattleState, rng: Rng, ev: BattleEv[]) {
         }
         ev.push({ k: 'hitPlayer', n: d }, { k: 'text', s: d > 0 ? `You take ${d}.` : 'Your plating holds.' });
         if (s.player.hp <= 0) break;
+        if (d > 0 && s.mods.thorns && f.alive) {
+          f.hp -= s.mods.thorns;
+          ev.push({ k: 'hitFoe', uid: f.uid, n: s.mods.thorns }, { k: 'text', s: `Thorns: ${NAME(f)} takes ${s.mods.thorns}.` });
+          if (f.hp <= 0) { killFoe(s, f, ev); break; }
+        }
       }
     }
     f.intentIdx += 1;
@@ -512,7 +545,7 @@ function enemyTurn(s: BattleState, rng: Rng, ev: BattleEv[]) {
 
 export function fleeChance(s: BattleState): number {
   const sp = Math.max(...aliveFoes(s).map((f) => ENEMIES[f.id].speed + f.tier));
-  return Math.max(0.1, Math.min(0.95, 0.4 + 0.05 * (effTraits(s).rfx - sp)));
+  return Math.max(0.1, Math.min(0.95, 0.4 + s.mods.fleeBonus + 0.05 * (effTraits(s).rfx - sp)));
 }
 
 export function canFlee(s: BattleState): boolean {
@@ -531,6 +564,7 @@ export function flee(s: BattleState, rng: Rng): BattleEv[] {
   for (const c of s.hand) if (!hasKeyword(CARDS[c.id], 'hold') && !c.fleeting) s.discard.push(c);
   s.hand = s.hand.filter((c) => hasKeyword(CARDS[c.id], 'hold'));
   enemyTurn(s, rng, ev);
+  checkEnd(s, ev);
   if (s.phase === 'player') startPlayerTurn(s, rng, ev);
   return ev;
 }

@@ -110,7 +110,7 @@ function botNext(r: RunState, tx: number, ty: number): [number, number] | null {
       const ni = idx(w, nx, ny);
       if (prev[ni] >= 0) continue;
       const g = gateAt(w, nx, ny);
-      const poi = w.pois.find((p) => p.x === nx && p.y === ny && (p.kind === 'vent' || p.kind === 'nest' || (p.kind === 'cache' && !p.used && !p.hidden)));
+      const poi = w.pois.find((p) => p.x === nx && p.y === ny && p.kind !== 'ship' && !(p.kind === 'cache' && (p.used || p.hidden)) && !(p.kind === 'nest' && p.used));
       const ok = (passable(w, nx, ny) && !poi) || (g && g.forcible) || (nx === tx && ny === ty);
       if (!ok) continue;
       prev[ni] = c;
