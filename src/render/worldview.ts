@@ -2,15 +2,10 @@ import { CREATURE_SIZE, drawCreature } from './creatures';
 import { drawCloneTop } from './clone';
 import { INK } from './palette';
 import { noise } from './sketch';
+import { theme } from './theme';
 import { inStorm, inView, isDark, type RunState } from '../core/run';
 import { gateAt, idx, T_GATE, T_HAZARD, T_WALL, type Mob, type Poi } from '../world/gen';
 
-const FLOOR = '#2b2d31';
-const FLOOR_LINE = '#393c42';
-const WALL_TOP = '#5e5a50';
-const WALL_EDGE = '#8c8574';
-const WALL_FACE = '#17191c';
-const HAZARD = '#5fae68';
 
 export const TILES_ACROSS = 11;
 
@@ -46,6 +41,7 @@ export class WorldView {
   draw(ctx: CanvasRenderingContext2D, r: RunState, t: number, dt: number, px: number, py: number, walking: boolean, path: [number, number][]) {
     const w = r.world;
     const T = this.T;
+    const th = theme(w.planet);
     if (!this.snapped) { this.camX = px; this.camY = py; this.snapped = true; }
     const k = 1 - Math.exp(-dt * 10);
     this.camX += (px - this.camX) * k;
@@ -90,28 +86,28 @@ export class WorldView {
         if (tile === T_WALL) continue;
         const X = this.sx(x);
         const Y = this.sy(y);
-        ctx.fillStyle = FLOOR;
+        ctx.fillStyle = th.floor;
         ctx.fillRect(X, Y, T + 0.5, T + 0.5);
-        ctx.strokeStyle = FLOOR_LINE;
+        ctx.strokeStyle = th.floorLine;
         ctx.lineWidth = 1;
         ctx.strokeRect(X + 1.5, Y + 1.5, T - 3, T - 3);
         if ((x * 7 + y * 13) % 5 === 0) {
-          ctx.fillStyle = FLOOR_LINE;
+          ctx.fillStyle = th.floorLine;
           ctx.fillRect(X + 4, Y + 4, 2, 2);
           ctx.fillRect(X + T - 6, Y + T - 6, 2, 2);
         }
         if (tile === T_HAZARD) {
           const g = 0.35 + 0.15 * Math.sin(t * 2 + x + y * 0.7);
-          ctx.fillStyle = HAZARD;
+          ctx.fillStyle = th.hazard;
           ctx.globalAlpha = g;
           ctx.beginPath();
           ctx.ellipse(X + T / 2 + noise(i) * T * 0.1, Y + T / 2, T * 0.46, T * 0.36, 0, 0, Math.PI * 2);
           ctx.fill();
           ctx.globalAlpha = 1;
-          ctx.fillStyle = '#b6f0a8';
+          ctx.fillStyle = th.hazardFleck;
           ctx.fillRect(X + T * (0.3 + 0.2 * noise(i + 1)), Y + T * 0.45, 2, 2);
         }
-        if (tile === T_GATE) this.drawGate(ctx, r, x, y, X, Y, t);
+        if (tile === T_GATE) this.drawGate(ctx, r, x, y, X, Y, t, th.debris);
       }
       // path dots
       for (const [qx, qy] of path) {
@@ -130,18 +126,36 @@ export class WorldView {
         const Y = this.sy(y);
         const below = y + 1 < w.h ? w.tiles[idx(w, x, y + 1)] : T_WALL;
         if (below !== T_WALL) {
-          ctx.fillStyle = WALL_FACE;
+          ctx.fillStyle = th.wallFace;
           ctx.fillRect(X, Y + T - lift, T + 0.5, lift + 0.5);
           ctx.fillStyle = '#23262a';
           ctx.fillRect(X, Y + T - 3, T + 0.5, 3);
         }
-        ctx.fillStyle = WALL_TOP;
+        ctx.fillStyle = th.wallTop;
         ctx.fillRect(X, Y - lift, T + 0.5, T + 0.5);
-        ctx.fillStyle = WALL_EDGE;
+        ctx.fillStyle = th.wallEdge;
         if (y > 0 && w.tiles[idx(w, x, y - 1)] !== T_WALL) ctx.fillRect(X, Y - lift, T + 0.5, 2);
         if (below !== T_WALL) {
-          ctx.fillStyle = '#5c584e';
+          ctx.fillStyle = th.wallLip;
           ctx.fillRect(X, Y + T - lift - 2, T + 0.5, 2);
+        }
+        if (th.crystals && noise(i * 3.1) > 0.35) {
+          // a crystal cluster growing out of the rock
+          const cx0 = X + T * (0.3 + 0.4 * (noise(i) * 0.5 + 0.5));
+          const base = Y - lift + T * 0.7;
+          ctx.fillStyle = th.wallEdge;
+          ctx.globalAlpha = 0.85;
+          for (let q = 0; q < 3; q++) {
+            const hx = cx0 + (q - 1) * T * 0.12;
+            const hh = T * (0.35 + 0.25 * (noise(i + q * 7) * 0.5 + 0.5));
+            ctx.beginPath();
+            ctx.moveTo(hx - T * 0.06, base);
+            ctx.lineTo(hx + noise(i + q) * T * 0.05, base - hh);
+            ctx.lineTo(hx + T * 0.06, base);
+            ctx.closePath();
+            ctx.fill();
+          }
+          ctx.globalAlpha = 1;
         }
       }
       // things standing in this row
@@ -181,7 +195,7 @@ export class WorldView {
     }
   }
 
-  private drawGate(ctx: CanvasRenderingContext2D, r: RunState, x: number, y: number, X: number, Y: number, t: number) {
+  private drawGate(ctx: CanvasRenderingContext2D, r: RunState, x: number, y: number, X: number, Y: number, t: number, debris: string) {
     const g = gateAt(r.world, x, y)!;
     const T = this.T;
     if (g.open) {
@@ -205,7 +219,7 @@ export class WorldView {
       ctx.lineTo(X + T / 2, Y + T * 0.7);
       ctx.stroke();
     } else {
-      ctx.fillStyle = INK.rust;
+      ctx.fillStyle = debris;
       for (let k = 0; k < 6; k++) {
         const ox = noise(g.id * 10 + k) * T * 0.3;
         const oy = noise(g.id * 10 + k + 50) * T * 0.25;

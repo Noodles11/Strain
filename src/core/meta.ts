@@ -15,6 +15,8 @@ export interface Meta {
   totalCodons: number;
   /** Log fragments found across all runs. */
   logs: string[];
+  /** Planets revealed on the star chart. */
+  planets: string[];
 }
 
 export const META_KEY = 'strain.meta';
@@ -23,7 +25,7 @@ export const RUN_KEY = 'strain.run';
 export function newMeta(): Meta {
   return {
     v: 1, codons: 0, seq: traits(SEQUENCE_START), clone: 1, runs: 0, wins: 0, deaths: 0,
-    lastEarned: 0, lastOutcome: 'none', totalCodons: 0, logs: [],
+    lastEarned: 0, lastOutcome: 'none', totalCodons: 0, logs: [], planets: ['derelict'],
   };
 }
 
@@ -39,7 +41,8 @@ export function raise(m: Meta, t: Trait): boolean {
 }
 
 /** Bank a finished run's Codons. */
-export function settleRun(m: Meta, earned: number, outcome: 'dead' | 'won', logs: string[] = []) {
+export function settleRun(m: Meta, earned: number, outcome: 'dead' | 'won', logs: string[] = [], planets: string[] = []) {
+  for (const p of planets) if (!m.planets.includes(p)) m.planets.push(p);
   for (const l of logs) if (!m.logs.includes(l)) m.logs.push(l);
   m.codons += earned;
   m.totalCodons += earned;

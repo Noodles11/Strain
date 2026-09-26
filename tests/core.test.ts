@@ -4,7 +4,7 @@ import { botTurn, startBattle } from '../src/core/battle';
 import { Rng } from '../src/core/rng';
 import { traits } from '../src/core/traits';
 import { newMeta } from '../src/core/meta';
-import { actionsAt, bAuto, doAction, lootChoose, maxHp, newRun, rewardPick, step, type RunState } from '../src/core/run';
+import { actionsAt, bAuto, chartOptions, doAction, land, lootChoose, maxHp, newRun, rewardPick, step, type RunState } from '../src/core/run';
 import { gateAt, idx, inBounds, passable, T_GATE, tileAt } from '../src/world/gen';
 
 describe('trait formulas', () => {
@@ -50,7 +50,7 @@ describe('battle', () => {
 });
 
 /** Walk toward the boss, fighting and forcing gates on the way. */
-export function botRun(seed: number, level: number): { r: RunState; outcome: string } {
+export function botRun(seed: number, level: number, landings = 1): { r: RunState; outcome: string } {
   const meta = newMeta();
   meta.seq = traits(level);
   const r = newRun(meta, seed);
@@ -63,6 +63,14 @@ export function botRun(seed: number, level: number): { r: RunState; outcome: str
       continue;
     }
     if (r.mode === 'reward') { rewardPick(r, 0); continue; }
+    if (r.mode === 'notice' as string) continue;
+    if (r.mode === 'chart') {
+      const open = chartOptions(r).find((o) => o.state === 'open');
+      if (!open || r.landing >= landings) { r.mode = 'won'; break; }
+      land(r, open.id);
+      r.world.seen.fill(1);
+      continue;
+    }
     const goal = r.bossDead ? r.world.ship : r.world.mobs.find((m) => m.kind === 'boss')!;
     if (r.bossDead && Math.abs(goal.x - r.x) + Math.abs(goal.y - r.y) <= 1) {
       if (r.x !== goal.x || r.y !== goal.y) step(r, goal.x - r.x, goal.y - r.y);
@@ -127,6 +135,11 @@ describe('bot runs', () => {
       for (let s = 1; s <= 30; s++) if (botRun(s, lvl).outcome === 'won') won++;
       return won / 30;
     };
+    for (const lvl of [5, 7, 9]) {
+      const o: Record<string, number> = {};
+      for (let s = 1; s <= 20; s++) { const { r, outcome } = botRun(s, lvl, 2); const k = `${outcome}@${r.planet}`; o[k] = (o[k] ?? 0) + 1; }
+      console.log('two landings', lvl, JSON.stringify(o));
+    }
     for (const lvl of [3, 5, 7]) {
       const o: Record<string, number> = {};
       let hp = 0;

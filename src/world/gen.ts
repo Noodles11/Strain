@@ -1,6 +1,5 @@
 import { Rng } from '../core/rng';
-import { DERELICT_AMBUSH, DERELICT_BOSS, DERELICT_ELITES, DERELICT_PACKS } from '../core/enemies';
-import { DERELICT_EVENTS } from '../core/events';
+import { planet as planetDef } from '../core/planets';
 
 export const T_WALL = 0;
 export const T_FLOOR = 1;
@@ -159,6 +158,7 @@ export function generateWorld(seed: number, tier = 1, planet = 'derelict'): Worl
 
 function tryGenerate(seed: number, tier: number, planet: string): World | null {
   const rng = new Rng(seed);
+  const P = planetDef(planet);
   const W = SIZE[tier] ?? 44;
   const H = W;
   const zoneCount = 11 + Math.min(4, tier);
@@ -279,7 +279,7 @@ function tryGenerate(seed: number, tier: number, planet: string): World | null {
 
   const zones: Zone[] = centers.map(([cx, cy], i) => {
     const ring: Ring = i === landing ? 'safe' : i === lair ? 'lair' : dist[i] <= Math.ceil(D / 2) ? 'wild' : 'deep';
-    return { id: i, cx, cy, ring, dist: dist[i], dark: (ring === 'wild' || ring === 'deep') && rng.next() < 0.25 };
+    return { id: i, cx, cy, ring, dist: dist[i], dark: (ring === 'wild' || ring === 'deep') && rng.next() < P.dark };
   });
 
   // 7. Carve crossings; some become gates.
@@ -309,7 +309,7 @@ function tryGenerate(seed: number, tier: number, planet: string): World | null {
 
   // 8. Hazard blobs in some rooms.
   for (const z of zones) {
-    if (z.ring === 'safe' || rng.next() > 0.3) continue;
+    if (z.ring === 'safe' || rng.next() > P.hazard) continue;
     const s2 = seed + z.id * 31;
     for (let y = 1; y < H - 1; y++) {
       for (let x = 1; x < W - 1; x++) {
@@ -369,26 +369,26 @@ function tryGenerate(seed: number, tier: number, planet: string): World | null {
 
   const bossP = spot(lair, [zones[lair].cx, zones[lair].cy], 1);
   if (!bossP) return null;
-  addMob('boss', lair, DERELICT_BOSS, bossP);
+  addMob('boss', lair, P.boss, bossP);
 
   const wilds = zones.filter((z) => z.ring === 'wild');
   const deeps = zones.filter((z) => z.ring === 'deep');
-  const pack = (ring: Ring) => DERELICT_PACKS[ring];
+  const pack = (ring: Ring) => P.packs[ring];
   for (const z of zones) {
     const n = z.ring === 'safe' ? 1 : z.ring === 'lair' ? 1 : 2;
     for (let i = 0; i < n; i++) {
       addMob('pack', z.id, rng.pick(pack(z.ring)), spot(z.id, undefined, 4), { chaser: z.ring !== 'safe' && rng.next() < 0.4 });
     }
     addPoi('cache', z.id, spot(z.id));
-    if (z.ring === 'wild' && rng.next() < 0.45) addMob('ambush', z.id, rng.pick(DERELICT_AMBUSH), spot(z.id), { stealth: 1 + rng.int(2) + tier - 1 });
-    if (z.ring === 'deep' && rng.next() < 0.6) addMob('ambush', z.id, rng.pick(DERELICT_AMBUSH), spot(z.id), { stealth: 2 + rng.int(2) + tier - 1 });
+    if (z.ring === 'wild' && rng.next() < 0.45) addMob('ambush', z.id, rng.pick(P.ambush), spot(z.id), { stealth: 1 + rng.int(2) + tier - 1 });
+    if (z.ring === 'deep' && rng.next() < 0.6) addMob('ambush', z.id, rng.pick(P.ambush), spot(z.id), { stealth: 2 + rng.int(2) + tier - 1 });
   }
   addPoi('cache', landing, spot(landing));
   // elites guard a cache
   const eliteZones = [rng.pick(wilds.length ? wilds : deeps), rng.pick(deeps.length ? deeps : wilds)];
   eliteZones.forEach((z, i) => {
     const p = spot(z.id);
-    addMob('elite', z.id, DERELICT_ELITES[i % DERELICT_ELITES.length], p);
+    addMob('elite', z.id, P.elites[i % P.elites.length], p);
     if (p) addPoi('cache', z.id, spot(z.id, p, 2));
   });
   // hidden caches
@@ -419,7 +419,7 @@ function tryGenerate(seed: number, tier: number, planet: string): World | null {
     if (p.kind === 'pod') p.offer = rng.sample(['mgt', 'hde', 'rfx', 'foc', 'met', 'abr'], 2);
   }
   // events: most wild and deep sections have one, never the same twice
-  const evIds = rng.shuffle(DERELICT_EVENTS.map((e) => e.id));
+  const evIds = rng.shuffle(P.events.map((e) => e.id));
   let ei = 0;
   for (const z of rng.shuffle(zones.filter((q) => q.ring === 'wild' || q.ring === 'deep'))) {
     if (ei >= evIds.length || (ei >= 3 && rng.next() > 0.55)) continue;

@@ -28,6 +28,8 @@ export interface Foe {
   alive: boolean;
   phase2: boolean;
   tier: number;
+  /** Already split once (Shardlings). */
+  split?: boolean;
 }
 
 export interface BattlePlayer {
@@ -85,6 +87,9 @@ export interface BattleState {
   mods: BattleMods;
   /** Cards played this fight. */
   played: number;
+  /** Cards played this turn (Resonance). */
+  turnPlays: number;
+  lastAttack: boolean;
 }
 
 /** Implant effects that reach into battles. */
@@ -95,6 +100,8 @@ export interface BattleMods {
   energyFirst: number;
   drawFirst: number;
   fleeBonus: number;
+  /** Kessra: every 3rd card each turn resolves twice. */
+  resonance?: boolean;
 }
 
 export const NO_MODS: BattleMods = { firstCardFree: false, thorns: 0, tagStart: 0, energyFirst: 0, drawFirst: 0, fleeBonus: 0 };
@@ -162,6 +169,8 @@ export function startBattle(setup: BattleSetup, rng: Rng, tierBonus: number, hpM
     log: [],
     mods: setup.mods ?? NO_MODS,
     played: 0,
+    turnPlays: 0,
+    lastAttack: false,
   };
   if (s.mods.tagStart && foes[0]) foes[0].tag += s.mods.tagStart;
   const ev: BattleEv[] = [];
@@ -248,9 +257,16 @@ export function playCard(s: BattleState, uid: number, targetUid: number | undefi
   s.empower = 0;
   const fx = r.fx.map((e) => ({ ...e }));
   for (const e of fx) {
-    if (e.op === 'dmg') e.v += bonus.dmg + emp;
+    if (e.op === 'dmg') {
+      e.v += bonus.dmg + emp;
+      if (def.dyn === 'resonant' && s.lastAttack) e.hits = (e.hits ?? 1) * 2;
+      if (def.dyn === 'splitlens' && aliveFoes(s).length >= 2) e.hits = (e.hits ?? 1) * 2;
+    }
     if (e.op === 'plate') e.v += bonus.plate;
   }
+  s.lastAttack = fx.some((e) => e.op === 'dmg' || e.op === 'shatter');
+  s.turnPlays += 1;
+  const resonates = !!s.mods.resonance && s.turnPlays % 3 === 0;
 
   const pickIdx = fx.findIndex((e) => e.op === 'donor' || e.op === 'cannibal');
   if (pickIdx >= 0 && s.hand.length > 0) {
@@ -260,7 +276,12 @@ export function playCard(s: BattleState, uid: number, targetUid: number | undefi
     ev.push({ k: 'text', s: op === 'donor' ? 'Choose a card to feed.' : 'Choose a card to eat.' });
     return ev;
   }
-  runFx(s, fx.filter((e) => e.op !== 'donor' && e.op !== 'cannibal'), card, targetUid, rng, ev);
+  const plain = fx.filter((e) => e.op !== 'donor' && e.op !== 'cannibal');
+  runFx(s, plain, card, targetUid, rng, ev);
+  if (resonates && s.phase === 'player') {
+    ev.push({ k: 'text', s: 'The glass hums. It happens again.' });
+    runFx(s, plain.map((e) => ({ ...e })), card, targetUid, rng, ev);
+  }
   finishCard(s, card, ev);
   return ev;
 }
@@ -345,6 +366,19 @@ function runFx(s: BattleState, fx: Effect<number>[], card: CardInst, targetUid: 
         break;
       }
       case 'triage': s.triage += e.v; break;
+      case 'shatter': {
+        const f = target();
+        if (f && f.plate > 0) {
+          const d = f.plate * e.v;
+          f.plate = 0;
+          f.hp -= d;
+          dealt += d;
+          ev.push({ k: 'hitFoe', uid: f.uid, n: d }, { k: 'text', s: `${NAME(f)}'s plating shatters! ${d} damage.` });
+          if (f.hp <= 0) killFoe(s, f, ev);
+          else checkPhase(s, f, ev);
+        } else if (f) ev.push({ k: 'text', s: `${NAME(f)} has no plating to break.` });
+        break;
+      }
       case 'empower': s.empower += e.v; ev.push({ k: 'text', s: `Next card +${e.v}.` }); break;
       case 'healPerTagged': {
         const n = aliveFoes(s).filter((f) => f.tag > 0).length;
@@ -370,11 +404,18 @@ function hitFoe(s: BattleState, f: Foe, raw: number, ev: BattleEv[]): number {
   let d = raw;
   if (s.player.weak > 0) d = Math.floor(d * 0.75);
   if (f.expose > 0) d = Math.floor(d * 1.5);
+  const reflect = ENEMIES[f.id].reflect && f.plate > 0 ? Math.floor(d * ENEMIES[f.id].reflect!) : 0;
   d = Math.max(0, d - f.plate);
   f.hp -= d;
   ev.push({ k: 'hitFoe', uid: f.uid, n: d }, { k: 'text', s: d > 0 ? `${NAME(f)} takes ${d}.` : `${NAME(f)}'s plating holds.` });
   if (f.hp <= 0) killFoe(s, f, ev);
   else checkPhase(s, f, ev);
+  if (reflect > 0 && s.player.hp > 0) {
+    s.player.hp -= reflect;
+    s.lostHp = true;
+    ev.push({ k: 'hitPlayer', n: reflect }, { k: 'text', s: `The light bounces back. You take ${reflect}.` });
+    if (s.player.hp <= 0) { s.player.hp = 0; s.phase = 'lost'; ev.push({ k: 'text', s: 'Your print fails.' }); }
+  }
   return d;
 }
 
@@ -383,6 +424,17 @@ function killFoe(s: BattleState, f: Foe, ev: BattleEv[]) {
   f.alive = false;
   s.kills += 1;
   ev.push({ k: 'die', uid: f.uid }, { k: 'text', s: `${NAME(f)} collapses!` });
+  if (ENEMIES[f.id].splits && !f.split) {
+    for (let i = 0; i < 2 && aliveFoes(s).length < 4; i++) {
+      const nf = makeFoe(f.id, f.tier, s.nextUid++, 1);
+      nf.maxHp = nf.hp = Math.max(1, Math.ceil(f.maxHp / 2));
+      nf.split = true;
+      nf.intentIdx = f.intentIdx + 1;
+      s.foes.push(nf);
+      ev.push({ k: 'summon', uid: nf.uid });
+    }
+    ev.push({ k: 'text', s: `${NAME(f)} splits in two!` });
+  }
   if (f.tag > 0 && s.triage > 0) {
     for (let i = 0; i < s.triage; i++) s.hand.push({ uid: s.nextUid++, id: 'clot', fleeting: true });
     ev.push({ k: 'text', s: `Triage prints ${s.triage} Clot Patch${s.triage > 1 ? 'es' : ''}.` });
@@ -432,6 +484,7 @@ function checkEnd(s: BattleState, ev: BattleEv[]) {
 
 function startPlayerTurn(s: BattleState, rng: Rng, _ev: BattleEv[], drawPenalty = 0) {
   s.turn += 1;
+  s.turnPlays = 0;
   s.player.plate = s.player.keep;
   s.player.keep = 0;
   s.energy = energyPerTurn(effTraits(s)) + (s.turn === 1 ? s.mods.energyFirst : 0);
@@ -468,7 +521,7 @@ export function currentIntent(f: Foe): Intent {
 }
 
 /** Final numbers of a foe's next move, before your plating. */
-export function intentNumbers(s: BattleState, f: Foe): { attack: number; hits: number; plate: number; weak: number; expose: number; strength: number; summon?: string; label: string } {
+export function intentNumbers(s: BattleState, f: Foe): { attack: number; hits: number; plate: number; weak: number; expose: number; strength: number; summon?: string; ally: number; label: string } {
   const def: EnemyDef = ENEMIES[f.id];
   const it = currentIntent(f);
   let attack = 0;
@@ -487,6 +540,7 @@ export function intentNumbers(s: BattleState, f: Foe): { attack: number; hits: n
     expose: it.expose ? it.expose + Math.floor(will / 4) : 0,
     strength: it.strength ?? 0,
     summon: it.summon,
+    ally: it.allyStrength ?? 0,
   };
 }
 
@@ -504,10 +558,15 @@ function enemyTurn(s: BattleState, rng: Rng, ev: BattleEv[]) {
     if (it.line) ev.push({ k: 'text', s: it.line });
     if (n.plate) { f.plate += n.plate; ev.push({ k: 'plate', who: f.uid }); }
     if (n.strength) { f.strength += n.strength; ev.push({ k: 'text', s: `${NAME(f)} grows stronger.` }); }
+    if (it.allyStrength) {
+      for (const o of aliveFoes(s)) if (o !== f) o.strength += it.allyStrength;
+      ev.push({ k: 'text', s: 'The others grow stronger.' });
+    }
     if (n.weak) { s.player.weak += n.weak; ev.push({ k: 'status', who: 'p' }, { k: 'text', s: 'You are Weak.' }); }
     if (n.expose) { s.player.expose += n.expose; ev.push({ k: 'status', who: 'p' }, { k: 'text', s: 'You are Exposed.' }); }
     if (n.summon && aliveFoes(s).length < 3) {
       const nf = makeFoe(n.summon, f.tier, s.nextUid++, 1);
+      nf.split = true;
       s.foes.push(nf);
       ev.push({ k: 'summon', uid: nf.uid }, { k: 'text', s: `${NAME(nf)} crawls out!` });
     }

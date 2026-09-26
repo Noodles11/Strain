@@ -3,9 +3,10 @@ import { CARDS } from '../core/cards';
 import { ENEMIES } from '../core/enemies';
 import { LOGS } from '../core/events';
 import { IMPLANTS } from '../core/implants';
+import { PLANETS } from '../core/planets';
 import { canRaise, loadMeta, newMeta, raise, RUN_KEY, saveMeta, settleRun, type Meta } from '../core/meta';
 import {
-  actionsAt, bEnd, bFlee, bPick, bPlay, canExcise, describeAt, doAction, eatValue, excise, exciseCost, expCard, expUsable, isInteractable, isSelfCard, migrateRun,
+  actionsAt, bEnd, bFlee, bPick, bPlay, canExcise, chartOptions, goHome, here, land, describeAt, doAction, eatValue, excise, exciseCost, expCard, expUsable, isInteractable, isSelfCard, migrateRun,
   lootChoose, lootDone, maxHp, mobAt, newRun, pathTo, playExp, renderValue, rewardPick, runTraits, step, stormIn,
   takeEvents, travel, travelPoints, type RunState,
 } from '../core/run';
@@ -40,6 +41,7 @@ function storage(): Storage | null {
 }
 
 const cloneName = (n: number) => `CLONE-${String(n).padStart(4, '0')}`;
+const chartName = (id: string) => PLANETS[id]?.name ?? id;
 
 export class App {
   private store = storage();
@@ -167,7 +169,7 @@ export class App {
 
   private endRun(outcome: 'dead' | 'won') {
     if (!this.run) return;
-    settleRun(this.meta, this.run.codons, outcome, this.run.logs);
+    settleRun(this.meta, this.run.codons, outcome, this.run.logs, this.run.revealed);
     saveMeta(this.store, this.meta);
     this.clearRun();
     this.showHub();
@@ -287,7 +289,7 @@ export class App {
       let strength = 0;
       if (this.layout === 'battle' && r.battle) {
         this.bv.update(dt);
-        this.bv.draw(ctx, r.battle, runTraits(r), this.sw, this.sh, t);
+        this.bv.draw(ctx, r.battle, runTraits(r), this.sw, this.sh, t, r.planet);
         strength = (1 - this.bv.intro) * 1.2;
       } else {
         const k = 1 - Math.exp(-dt * 16);
@@ -520,7 +522,7 @@ export class App {
     const newMsg = r.msgs.length !== this.lastMsgCount;
     this.lastMsgCount = r.msgs.length;
     const msg = r.msgs[r.msgs.length - 1] ?? '';
-    hud.innerHTML = `<div class="hud-row"><span class="stat">${cloneName(r.clone)}</span>${this.bar(r.hp, mh, 16)}<span class="stat">${Math.max(0, r.hp)}/${mh}</span></div>
+    hud.innerHTML = `<div class="hud-row"><span class="stat">${esc(here(r).name.replace('The ', '').toUpperCase())} ${r.landing}</span>${this.bar(r.hp, mh, 16)}<span class="stat">${Math.max(0, r.hp)}/${mh}</span></div>
       <div class="hud-row"><span class="stat" style="color:var(--foc)">O₂</span><span class="pips">${Array.from({ length: mo }, (_, i) => `<b class="${i < r.oxygen ? 'on' : ''}"></b>`).join('')}</span>
       <span class="chip">◆ ${r.biomass} bio</span><span class="chip" style="color:var(--sodium)">${r.codons} cod</span>
       ${r.storm ? '<span class="chip warn">STORM</span>' : storm < 200 ? `<span class="chip warn">storm ${storm}</span>` : ''}
@@ -583,6 +585,7 @@ export class App {
           if (n.weak) parts.push(`weak ${n.weak}`);
           if (n.expose) parts.push(`expose ${n.expose}`);
           if (n.summon) parts.push('summon');
+          if (n.ally) parts.push(`ALLIES STR+${n.ally}`);
           intent = parts.join(' ') || n.label;
         }
         const st = [f.plate ? `⬢${f.plate}` : '', f.strength ? `▲${f.strength}` : '', f.weak ? `weak ${f.weak}` : '', f.expose ? `exp ${f.expose}` : '', f.tag ? `tag ${f.tag}` : ''].filter(Boolean).join(' ');
@@ -659,16 +662,27 @@ export class App {
     let html = '';
     if (quiet && r.mode === 'dead') {
       html = `<div class="screen"><div class="big-msg">PRINT<br>FAILED</div>
-        <p class="sub">${cloneName(r.clone)} died on the derelict after ${r.stats.fights} fights and ${r.steps} steps.</p>
+        <p class="sub">${cloneName(r.clone)} died on ${esc(here(r).name)} (landing ${r.landing}) after ${r.stats.fights} fights and ${r.stats.steps} steps.</p>
         <div class="codons">+${r.codons} <small>Codons banked</small></div>
         <p class="sub">The sequence remembers. The next print starts stronger if you spend them.</p>
         <button class="btn primary" data-o="hub">Back to the Printer</button></div>`;
     } else if (r.mode === 'won') {
-      html = `<div class="screen"><div class="big-msg">DERELICT<br>CLEARED</div>
-        <p class="sub">${cloneName(r.clone)} lifted off. The First is dead. ${r.stats.fights} fights, ${r.stats.ambushed} ambushes survived.</p>
+      const lost = chartOptions(r).filter((o) => o.state === 'lost').map((o) => o.name);
+      html = `<div class="screen"><div class="big-msg">${r.landing} WORLD${r.landing > 1 ? 'S' : ''}<br>CLEARED</div>
+        <p class="sub">${cloneName(r.clone)} came home from ${r.visited.map((id) => esc(chartName(id))).join(' → ')}. ${r.stats.fights} fights, ${r.stats.ambushed} ambushes survived.</p>
         <div class="codons">+${r.codons} <small>Codons banked</small></div>
-        <p class="sub">The star chart shows three faint signals: Kessra, Mireth, Orun. Their coordinates arrive in a later build.</p>
+        ${r.revealed.length ? `<p class="sub">New on the star chart: ${r.revealed.map((id) => esc(chartName(id))).join(', ')}.</p>` : ''}
+        ${lost.length ? `<p class="sub">Still no signal from ${lost.map(esc).join(' or ')}. Their coordinates arrive in a later build.</p>` : ''}
         <button class="btn primary" data-o="hub-won">Back to the Printer</button></div>`;
+    } else if (r.mode === 'chart') {
+      const rows = chartOptions(r).map((o) => {
+        const tag = o.state === 'open' ? `Landing ${r.landing + 1} · tier ${r.landing + 1}` : o.state === 'visited' ? 'Cleared this run' : o.state === 'lost' ? 'Signal lost' : 'Unknown signal';
+        return `<div class="planet ${o.state}"><div class="pn">${o.state === 'unknown' ? '???' : esc(o.name)}</div><div class="pp">${o.state === 'unknown' ? 'A faint signal. Beat a world boss to fix its position.' : esc(o.pitch)}</div>
+          <div class="row"><span class="chip">${tag}</span>${o.state === 'open' ? `<button class="btn primary small" data-land="${o.id}">Set course</button>` : ''}</div></div>`;
+      }).join('');
+      html = `<div class="screen"><h1 class="title">STAR CHART<small>${esc(here(r).name)} cleared · ${r.codons} Codons so far</small></h1>
+        <p class="sub">Each landing is one tier harder, whichever world you pick. The ship refuels: full oxygen, +30% integrity.</p>
+        ${rows}<button class="btn" data-o="home">Go home now and bank everything</button></div>`;
     } else if (quiet && r.mode === 'loot' && r.loot) {
       const rows = r.loot.map((c, i) => `<div class="corpse"><span class="nm">${esc(ENEMIES[c.id].name)}${c.tagged ? ' ⌖' : ''}</span>
         ${c.done ? `<span class="chip">${c.done === 'eat' ? 'eaten' : 'rendered'}</span>`
@@ -722,6 +736,15 @@ export class App {
       this.saveRun();
       this.refresh();
     }));
+    o.querySelectorAll<HTMLElement>('[data-land]').forEach((b) => b.addEventListener('click', () => {
+      if (!land(r, b.dataset.land!)) return;
+      this.drawX = r.x;
+      this.drawY = r.y;
+      this.wv.snap();
+      this.saveRun();
+      this.layout = '';
+      this.syncLayout();
+    }));
     o.querySelectorAll<HTMLElement>('[data-tab]').forEach((b) => b.addEventListener('click', () => {
       const tab = b.dataset.tab as 'tac' | 'exp';
       this.sheet = this.sheet?.kind === 'surgery' ? { kind: 'surgery', tab } : { kind: 'deck', tab };
@@ -733,6 +756,7 @@ export class App {
       else if (k === 'notice') { r.notice = undefined; this.saveRun(); this.refresh(); }
       else if (k === 'hub') this.endRun('dead');
       else if (k === 'hub-won') this.endRun('won');
+      else if (k === 'home') { goHome(r); this.saveRun(); this.refresh(); }
       else if (k === 'lootdone') { lootDone(r); this.saveRun(); this.syncLayout(); }
       else if (k === 'print') {
         this.printOn = !this.printOn;
@@ -772,7 +796,7 @@ export class App {
       }
       case 'map': {
         const pts = travelPoints(r).map((p) => `<button class="btn small" data-travel="${p.x},${p.y}">${esc(p.label)}</button>`).join('');
-        return wrap(`<h2>Derelict · map</h2><canvas class="minimap"></canvas><p>Fast travel (not while hunted):</p><div class="row">${pts}</div>`);
+        return wrap(`<h2>${esc(here(r).name)} · map</h2><canvas class="minimap"></canvas><p>Fast travel (not while hunted):</p><div class="row">${pts}</div>`);
       }
       case 'deck': {
         const list = s.tab === 'tac' ? r.tac : r.exp;

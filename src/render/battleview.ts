@@ -3,6 +3,7 @@ import { drawCloneBack } from './clone';
 import { INK } from './palette';
 import type { BattleState } from '../core/battle';
 import type { Traits } from '../core/traits';
+import { theme, type Theme } from './theme';
 
 export interface FoeAnim {
   flash: number;
@@ -47,10 +48,11 @@ export class BattleView {
     this.shake = Math.max(0, this.shake - dt * 3);
   }
 
-  draw(ctx: CanvasRenderingContext2D, b: BattleState, traits: Traits, W: number, H: number, t: number) {
+  draw(ctx: CanvasRenderingContext2D, b: BattleState, traits: Traits, W: number, H: number, t: number, planet = 'derelict') {
+    const th = theme(planet);
     ctx.save();
     if (this.shake > 0) ctx.translate(Math.sin(t * 90) * this.shake * 8, Math.cos(t * 70) * this.shake * 4);
-    this.drawBackdrop(ctx, W, H, t);
+    this.drawBackdrop(ctx, W, H, t, th);
 
     const ease = (x: number) => 1 - (1 - x) ** 3;
     const k = ease(this.intro);
@@ -58,11 +60,11 @@ export class BattleView {
     // foe ledge
     const ex = W * 0.7 + (1 - k) * W * 0.6;
     const ey = H * 0.46;
-    this.ledge(ctx, ex, ey, W * 0.3, H * 0.055);
+    this.ledge(ctx, ex, ey, W * 0.3, H * 0.055, th);
     // clone ledge
     const px = W * 0.27 - (1 - k) * W * 0.6;
     const py = H * 0.95;
-    this.ledge(ctx, px, py, W * 0.3, H * 0.06);
+    this.ledge(ctx, px, py, W * 0.3, H * 0.06, th);
 
     const shown = b.foes.filter((f) => f.alive || !this.anim(f.uid).gone);
     const alive = b.foes.filter((f) => f.alive);
@@ -105,12 +107,12 @@ export class BattleView {
     ctx.restore();
   }
 
-  private ledge(ctx: CanvasRenderingContext2D, x: number, y: number, rx: number, ry: number) {
-    ctx.fillStyle = '#3d3a33';
+  private ledge(ctx: CanvasRenderingContext2D, x: number, y: number, rx: number, ry: number, th: Theme) {
+    ctx.fillStyle = th.ledge;
     ctx.beginPath();
     ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = '#57534a';
+    ctx.fillStyle = th.ledgeTop;
     ctx.beginPath();
     ctx.ellipse(x, y - ry * 0.18, rx * 0.94, ry * 0.8, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -121,35 +123,74 @@ export class BattleView {
     ctx.stroke();
   }
 
-  private drawBackdrop(ctx: CanvasRenderingContext2D, W: number, H: number, t: number) {
+  private drawBackdrop(ctx: CanvasRenderingContext2D, W: number, H: number, t: number, th: Theme) {
     const hz = H * 0.52;
     const sky = ctx.createLinearGradient(0, 0, 0, hz);
-    sky.addColorStop(0, '#121417');
-    sky.addColorStop(1, '#2a2c30');
+    sky.addColorStop(0, th.skyTop);
+    sky.addColorStop(1, th.skyLow);
     ctx.fillStyle = sky;
     ctx.fillRect(-20, -20, W + 40, hz + 20);
-    // bulkhead ribs
-    ctx.strokeStyle = '#3a3c41';
-    ctx.lineWidth = 3;
-    for (let i = 0; i < 7; i++) {
-      const x = (i + 0.5) * (W / 7);
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x + (x - W / 2) * 0.08, hz);
-      ctx.stroke();
+    if (th.crystals) {
+      // crystal spires against the cave dark, two layers
+      for (let layer = 0; layer < 2; layer++) {
+        ctx.fillStyle = layer ? th.wallTop : th.ledge;
+        ctx.globalAlpha = layer ? 0.9 : 0.7;
+        for (let i = 0; i < 9; i++) {
+          const x = ((i + 0.5 + layer * 0.4) / 9) * W;
+          const h = hz * (0.35 + 0.35 * (Math.sin(i * 12.9 + layer * 4) * 0.5 + 0.5)) * (layer ? 0.7 : 1);
+          ctx.beginPath();
+          ctx.moveTo(x - W * 0.035, hz);
+          ctx.lineTo(x + Math.sin(i) * W * 0.01, hz - h);
+          ctx.lineTo(x + W * 0.035, hz);
+          ctx.closePath();
+          ctx.fill();
+        }
+        // stalactites
+        for (let i = 0; i < 8; i++) {
+          const x = ((i + 0.2 + layer * 0.5) / 8) * W;
+          const h = hz * 0.18 * (Math.sin(i * 7.3 + layer) * 0.5 + 0.8);
+          ctx.beginPath();
+          ctx.moveTo(x - W * 0.025, 0);
+          ctx.lineTo(x, h);
+          ctx.lineTo(x + W * 0.025, 0);
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
+      ctx.globalAlpha = 1;
+      // drifting motes
+      ctx.fillStyle = th.wallEdge;
+      for (let i = 0; i < 14; i++) {
+        const x = ((i * 97 + t * 8) % W);
+        const y = (hz * (0.2 + 0.7 * ((i * 53) % 100) / 100) + Math.sin(t + i) * 6);
+        ctx.globalAlpha = 0.3 + 0.3 * Math.sin(t * 2 + i);
+        ctx.fillRect(x, y, 2, 2);
+      }
+      ctx.globalAlpha = 1;
+    } else {
+      // bulkhead ribs
+      ctx.strokeStyle = '#3a3c41';
+      ctx.lineWidth = 3;
+      for (let i = 0; i < 7; i++) {
+        const x = (i + 0.5) * (W / 7);
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x + (x - W / 2) * 0.08, hz);
+        ctx.stroke();
+      }
     }
     // one warning lamp
-    ctx.fillStyle = INK.sodium;
+    ctx.fillStyle = th.accent;
     ctx.globalAlpha = 0.5 + 0.5 * Math.max(0, Math.sin(t * 2.2));
     ctx.fillRect(W * 0.12, H * 0.1, W * 0.05, H * 0.02);
     ctx.globalAlpha = 1;
     // floor
     const fl = ctx.createLinearGradient(0, hz, 0, H);
-    fl.addColorStop(0, '#34363a');
-    fl.addColorStop(1, '#1b1d20');
+    fl.addColorStop(0, th.groundTop);
+    fl.addColorStop(1, th.groundLow);
     ctx.fillStyle = fl;
     ctx.fillRect(-20, hz, W + 40, H - hz + 20);
-    ctx.strokeStyle = '#43464b';
+    ctx.strokeStyle = th.groundLine;
     ctx.lineWidth = 1;
     for (let i = -6; i <= 6; i++) {
       ctx.beginPath();

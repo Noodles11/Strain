@@ -178,3 +178,10 @@ b.foc { color: var(--foc); } b.met { color: var(--met); } b.abr { color: var(--a
 .codex summary { cursor: pointer; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--sodium); }
 .codex p { font-size: 15px; line-height: 1.35; margin: 8px 0; }
 sup { font-size: 10px; }
+
+.planet { background: var(--panel); border-left: 4px solid var(--sodium); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.planet .pn { font-family: var(--display); font-size: 30px; line-height: 1; }
+.planet .pp { color: #c4bba6; font-size: 15px; }
+.planet .row { align-items: center; justify-content: space-between; }
+.planet .row .btn { flex: none; }
+.planet.visited, .planet.lost, .planet.unknown { border-color: var(--line); opacity: 0.6; }

@@ -18,6 +18,7 @@ export type Effect<N = Val> =
   | { op: 'healPerTagged'; v: N }
   | { op: 'drain'; v: N } // percent of damage this card dealt, healed
   | { op: 'surge'; v: N } // +v to a random trait this fight; unstable
+  | { op: 'shatter'; v: N } // deal target plating × v, then strip it
   | { op: 'donor' }
   | { op: 'cannibal' };
 
@@ -25,7 +26,7 @@ export type Effect<N = Val> =
 export type ExploreAct = 'override' | 'cut' | 'scan' | 'pry' | 'heal' | 'flare' | 'notes' | 'beacon' | 'stalk' | 'seal';
 
 /** Growth inside one fight, tracked by the battle. */
-export type Dyn = 'feeding' | 'sibling' | 'callus' | 'unscarred' | 'grief' | 'scartissue';
+export type Dyn = 'feeding' | 'sibling' | 'callus' | 'unscarred' | 'grief' | 'scartissue' | 'resonant' | 'splitlens';
 
 export interface Threshold {
   t: Trait;
@@ -232,6 +233,33 @@ export const CARDS: Record<string, CardDef> = {
     flavor: 'Bone threads into bone.',
   },
 
+  // ---- Kessra ----
+  resonant: {
+    id: 'resonant', name: 'Resonant Strike', deck: 'tac', cost: 1, glyph: '≀', dyn: 'resonant',
+    fx: [{ op: 'dmg', v: v(2, { mgt: 1 }) }],
+    rule: 'If the last card you played was an attack, it strikes twice.',
+    flavor: 'The glass remembers the last blow and repeats it.',
+  },
+  shatter: {
+    id: 'shatter', name: 'Shatter', deck: 'tac', cost: 2, glyph: '✧',
+    fx: [{ op: 'shatter', v: v(2) }, { op: 'dmg', v: v(2) }],
+    th: [{ t: 'mgt', at: 8, text: 'Plating ×3', apply: (r) => setNum(r, 'shatter', 3) }],
+    rule: 'Deal the target’s plating ×2, ignoring it, then strip it.',
+    flavor: 'Armour is just glass that hasn’t broken yet.',
+  },
+  crystalskin: {
+    id: 'crystalskin', name: 'Crystal Skin', deck: 'tac', cost: 1, glyph: '◇',
+    fx: [{ op: 'plate', v: v(3, { hde: 1 }), keep: true }],
+    rule: 'This plating doesn’t fade next turn.',
+    flavor: 'It grows over you in a night.',
+  },
+  splitlens: {
+    id: 'splitlens', name: 'Split Lens', deck: 'tac', cost: 1, glyph: '⟁', dyn: 'splitlens',
+    fx: [{ op: 'dmg', v: v(0, { rfx: 1 }), aoe: true }],
+    rule: 'Against 2 or more enemies, hits twice.',
+    flavor: 'One beam in. Many out.',
+  },
+
   // ---- Exploration ----
   override: {
     id: 'override', name: 'Override', deck: 'exp', cost: 1, glyph: '⌬', act: 'override', power: v(0, { foc: 0.5 }),
@@ -414,6 +442,7 @@ export function cardText(def: CardDef, t: Traits, opts: { donor?: boolean; dmgBo
       case 'healPerTagged': lines.push([{ s: 'Heal ' }, num(e.v, val), { s: ' per tagged enemy' }]); break;
       case 'drain': lines.push([{ s: `Heal ${e.v}% of damage` }]); break;
       case 'surge': lines.push([{ s: '+2 random trait this fight' }]); break;
+      case 'shatter': lines.push([{ s: `Plating ×${e.v}, then strip it` }]); break;
       case 'donor': break;
       case 'cannibal': break;
     }

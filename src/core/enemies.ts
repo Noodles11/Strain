@@ -12,6 +12,8 @@ export interface Intent {
   expose?: number;
   /** Enemy id to call in, if there is room. */
   summon?: string;
+  /** Strength given to every other living enemy. */
+  allyStrength?: number;
   line?: string;
 }
 
@@ -28,6 +30,10 @@ export interface EnemyDef {
   flavor: string;
   phase2?: { below: number; pattern: Intent[]; line: string };
   rank?: 'elite' | 'boss';
+  /** Splits into two half-HP copies on its first death. */
+  splits?: boolean;
+  /** While plated, this share of every hit comes back at you, through plating. */
+  reflect?: number;
 }
 
 export const ENEMIES: Record<string, EnemyDef> = {
@@ -115,6 +121,64 @@ export const ENEMIES: Record<string, EnemyDef> = {
       ],
     },
   },
+
+  // ---- Kessra, the Glass Caves ----
+  shardling: {
+    id: 'shardling', name: 'Shardling', hp: 12, biomass: 2, might: 2, hide: 0, speed: 6, will: 0, splits: true,
+    flavor: 'A splinter that learned to walk. Break it and there are two.',
+    pattern: [
+      { label: 'Nip', attack: 2 },
+      { label: 'Skitter', attack: 4 },
+      { label: 'Nip', attack: 3 },
+    ],
+  },
+  crawler: {
+    id: 'crawler', name: 'Lattice Crawler', hp: 30, biomass: 6, might: 3, hide: 1, speed: 1, will: 1,
+    flavor: 'It grows armour faster than you can cut it. Hit it before it finishes.',
+    pattern: [
+      { label: 'Harden', plate: 2 },
+      { label: 'Grind', plate: 1, attack: 5 },
+      { label: 'Crush', attack: 12 },
+    ],
+  },
+  geode: {
+    id: 'geode', name: 'Singing Geode', hp: 16, biomass: 5, might: 0, hide: 1, speed: 2, will: 3,
+    flavor: 'It never attacks. It sings, and everything near it gets stronger.',
+    pattern: [
+      { label: 'Hum', allyStrength: 2, line: 'mmmmmmmmmm' },
+      { label: 'Shriek', weak: 1, expose: 1 },
+      { label: 'Chorus', allyStrength: 2, plate: 1 },
+    ],
+  },
+  refractor: {
+    id: 'refractor', name: 'Refractor', hp: 44, biomass: 10, might: 3, hide: 2, speed: 3, will: 2, rank: 'elite', reflect: 0.5,
+    flavor: 'A walking mirror. While it is plated, half of every blow comes back to you.',
+    pattern: [
+      { label: 'Polish', plate: 2 },
+      { label: 'Lance', attack: 9 },
+      { label: 'Glare', attack: 5, plate: 1 },
+    ],
+  },
+  prism: {
+    id: 'prism', name: 'The Prism Mother', hp: 100, biomass: 18, might: 4, hide: 2, speed: 3, will: 4, rank: 'boss',
+    flavor: 'The oldest thing in the caves. Every shardling is a piece she let go of.',
+    pattern: [
+      { label: 'Refract', attack: 5, hits: 2 },
+      { label: 'Glare', weak: 1, expose: 0, line: 'I SEE EVERY COPY OF YOU' },
+      { label: 'Prism Beam', attack: 13 },
+      { label: 'Facet', plate: 3 },
+    ],
+    phase2: {
+      below: 0.5,
+      line: 'THEN BREAK. AND BREAK. AND BREAK.',
+      pattern: [
+        { label: 'Shed', summon: 'shardling', attack: 4 },
+        { label: 'Spectrum', attack: 5, hits: 2 },
+        { label: 'Shed', summon: 'shardling', plate: 2 },
+        { label: 'Prism Beam', attack: 15 },
+      ],
+    },
+  },
 };
 
 export interface Tier {
@@ -133,15 +197,3 @@ export const TIERS: Record<number, Tier> = {
 export function tierOf(n: number): Tier {
   return TIERS[Math.max(1, Math.min(5, n))];
 }
-
-/** Enemy groups per ring of the derelict. */
-export const DERELICT_PACKS: Record<'safe' | 'wild' | 'deep' | 'lair', string[][]> = {
-  safe: [['tick'], ['copy'], ['tick', 'tick']],
-  wild: [['copy', 'tick'], ['husk'], ['drone'], ['bloom'], ['drone', 'tick']],
-  deep: [['husk', 'drone'], ['copy', 'copy'], ['bloom', 'tick', 'tick'], ['husk', 'bloom'], ['drone', 'drone']],
-  lair: [['husk', 'drone'], ['copy', 'bloom']],
-};
-export const DERELICT_AMBUSH: string[][] = [['tick', 'tick'], ['husk'], ['tick', 'copy']];
-export const DERELICT_ELITES: string[][] = [['hollow'], ['choir']];
-export const DERELICT_NEST: string[] = ['tick', 'tick'];
-export const DERELICT_BOSS: string[] = ['first'];

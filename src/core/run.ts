@@ -4,8 +4,9 @@ import {
 import {
   botTurn, endTurn, flee, pickHand, playCard, startBattle, type BattleEv, type BattleState, type CardInst,
 } from './battle';
-import { DERELICT_AMBUSH, DERELICT_NEST, DERELICT_PACKS, ENEMIES, tierOf } from './enemies';
-import { checkChance, DERELICT_EVENTS, LOG_CODONS, LOGS, type Outcome } from './events';
+import { ENEMIES, tierOf } from './enemies';
+import { findEvent, planet, PLANETS, type PlanetDef } from './planets';
+import { checkChance, LOG_CODONS, LOGS, type Outcome } from './events';
 import { IMPLANT_POOL, IMPLANTS, implantMods, type ImplantMods } from './implants';
 import type { Meta } from './meta';
 import { Rng } from './rng';
@@ -26,7 +27,7 @@ export const TERMINAL_PRICE = 5;
 export const SITE_BUYS = 2;
 export const KILL_CODONS = 2;
 
-export type Mode = 'explore' | 'battle' | 'loot' | 'reward' | 'dead' | 'won';
+export type Mode = 'explore' | 'battle' | 'loot' | 'reward' | 'chart' | 'dead' | 'won';
 
 export interface Corpse {
   id: string;
@@ -89,7 +90,15 @@ export interface RunState {
   reward?: Reward;
   bossDead: boolean;
   landing: number;
-  stats: { kills: number; fights: number; ambushed: number };
+  /** The planet under your feet. */
+  planet: string;
+  /** Planets landed on this run, in order. */
+  visited: string[];
+  /** Planets revealed by bosses this run; banked at the end. */
+  revealed: string[];
+  /** Planets the Printer already knows about. */
+  knownPlanets: string[];
+  stats: { kills: number; fights: number; ambushed: number; steps: number };
   msgs: string[];
   implants: string[];
   /** Somatic points bought this run (sets the pod price). */
@@ -107,6 +116,10 @@ export interface RunState {
 
 export function newRun(meta: Meta, seed: number): RunState {
   const world = generateWorld(seed, 1, 'derelict');
+  return setupRun(meta, seed, world);
+}
+
+function setupRun(meta: Meta, seed: number, world: World): RunState {
   let uid = 1;
   const tac = STARTER_TAC.map((id) => ({ uid: uid++, id }));
   const exp = STARTER_EXP.map((id) => ({ uid: uid++, id }));
@@ -118,8 +131,9 @@ export function newRun(meta: Meta, seed: number): RunState {
     consumedRun: 0, nextUid: uid,
     world, x: world.ship.x, y: world.ship.y, facing: [0, -1], steps: 0, storm: 0, stormedZones: [], zonesVisited: [world.landingZone],
     sealSteps: 0, stalk: false, flarePower: 0, beacons: [],
-    mode: 'explore', bossDead: false, landing: 1,
-    stats: { kills: 0, fights: 0, ambushed: 0 }, msgs: [],
+    mode: 'explore', bossDead: false, landing: 1, planet: world.planet, visited: [world.planet], revealed: [],
+    knownPlanets: [...(meta.planets ?? ['derelict'])],
+    stats: { kills: 0, fights: 0, ambushed: 0, steps: 0 }, msgs: [],
     implants: [], somaticBought: 0, excised: 0, logs: [], knownLogs: [...(meta.logs ?? [])],
   };
   const t = runTraits(r);
@@ -140,7 +154,16 @@ export function migrateRun(r: RunState): RunState {
   r.logs ??= [];
   r.knownLogs ??= [];
   r.zonesVisited ??= [r.world.landingZone];
+  r.planet ??= r.world.planet;
+  r.visited ??= [r.planet];
+  r.revealed ??= [];
+  r.knownPlanets ??= ['derelict'];
+  r.stats.steps ??= r.steps;
   return r;
+}
+
+export function here(r: RunState): PlanetDef {
+  return planet(r.planet);
 }
 
 export function mods(r: RunState): ImplantMods {
@@ -400,13 +423,14 @@ export function step(r: RunState, dx: number, dy: number): boolean {
   r.x = nx;
   r.y = ny;
   r.steps += 1;
+  r.stats.steps += 1;
   const t = runTraits(r);
 
   if (tileAt(r.world, nx, ny) === T_HAZARD) {
     if (r.sealSteps > 0) r.sealSteps -= 1;
     else {
       const d = hazardDamage(t);
-      if (d) { r.hp -= d; say(r, `The leak burns. −${d}.`); }
+      if (d) { r.hp -= d; say(r, `${here(r).hazardText} −${d}.`); }
     }
   }
   if (inStorm(r, nx, ny)) {
@@ -468,7 +492,7 @@ function tickWorld(r: RunState) {
       const [x, y] = rng.pick(spots);
       const ring = r.world.zones[p.zone].ring;
       w.mobs.push({
-        id: w.nextId++, kind: 'spawn', x, y, hx: x, hy: y, zone: p.zone, foes: rng.pick(DERELICT_PACKS[ring]),
+        id: w.nextId++, kind: 'spawn', x, y, hx: x, hy: y, zone: p.zone, foes: rng.pick(here(r).packs[ring]),
         alive: true, reward: false, chaser: rng.next() < 0.5, alerted: false, stealth: 0, spotted: true, nest: p.id,
       });
     });
@@ -484,7 +508,7 @@ function respawnZone(r: RunState, zone: number) {
       m.y = m.hy;
       m.reward = false;
       m.alerted = false;
-      m.foes = m.kind === 'ambush' ? rng.pick(DERELICT_AMBUSH) : rng.pick(DERELICT_PACKS[r.world.zones[zone].ring]);
+      m.foes = m.kind === 'ambush' ? rng.pick(here(r).ambush) : rng.pick(here(r).packs[r.world.zones[zone].ring]);
       if (m.kind === 'ambush') m.spotted = false;
     }
   });
@@ -577,7 +601,7 @@ function startFight(r: RunState, foes: string[], tier: number, ctx: FightCtx, am
   const out = withRng(r, (rng) => startBattle({
     foes, tier, deck: r.tac, traits: t, hp: r.hp, maxHp: maxHp(r), biomass: r.biomass,
     consumedRun: r.consumedRun, ambush, firstStrike, exposeStart: expose, plateStart: m.plateHde ? t.hde : 0,
-    mods: { firstCardFree: m.firstCardFree, thorns: m.thorns, tagStart: m.tagStart, energyFirst: m.energyFirst, drawFirst: m.drawFirst, fleeBonus: m.fleeBonus },
+    mods: { firstCardFree: m.firstCardFree, thorns: m.thorns, tagStart: m.tagStart, energyFirst: m.energyFirst, drawFirst: m.drawFirst, fleeBonus: m.fleeBonus, resonance: here(r).twist === 'resonance' },
   }, rng, tr.bonus, tr.hp));
   r.battle = out.s;
   r.fight = ctx;
@@ -671,15 +695,17 @@ function afterBattleOp(r: RunState) {
   } else if (mob) {
     mob.alive = false;
     if (ctx.kind === 'boss') {
+      const P = here(r);
       codons = 20 * r.world.tier;
       r.bossDead = true;
-      title = 'The First is dead';
-      findLog(r, 'derelict-5');
-      say(r, 'The First is dead. Return to the ship to launch.');
+      title = `${P.bossName} is dead`;
+      if (P.bossLog) findLog(r, P.bossLog);
+      for (const id of P.reveals) if (!r.revealed.includes(id) && !r.knownPlanets.includes(id)) r.revealed.push(id);
+      say(r, `${P.bossName} is dead. Return to the ship to launch.`);
     } else if (ctx.kind === 'elite') {
       codons = 8;
       biomass = 6;
-      options = offerCards(r, 'tac');
+      options = here(r).cards.length ? offerCards(r, 'tac', here(r).cards) : offerCards(r, 'tac');
       title = 'Elite remains';
       const got = addImplant(r, 'random');
       if (got) title = `Elite remains · ${IMPLANTS[got].name} implanted`;
@@ -741,9 +767,10 @@ function topTraits(r: RunState): Trait[] {
   return [...TRAITS].sort((a, b) => t[b] - t[a]).slice(0, 2);
 }
 
-/** Three distinct cards; half the slots lean toward your two best traits. */
-export function offerCards(r: RunState, deck: DeckKind): string[] {
-  const pool = deck === 'tac' ? REWARD_TAC : REWARD_EXP;
+/** Three distinct cards; half the slots lean toward your two best traits. Planet cards join the tactical pool. */
+export function offerCards(r: RunState, deck: DeckKind, only?: string[]): string[] {
+  const local = here(r).cards;
+  const pool = only ?? (deck === 'tac' ? [...REWARD_TAC, ...local, ...local] : REWARD_EXP);
   const top = topTraits(r);
   const fav = pool.filter((id) => { const p = primaryTrait(CARDS[id]); return p && top.includes(p); });
   const all = [...new Set(pool)].length;
@@ -800,7 +827,7 @@ export function describeAt(r: RunState, x: number, y: number): { title: string; 
     case 'terminal': return { title: 'Printer terminal', text: `It still prints techniques. ${TERMINAL_PRICE} biomass each, ${SITE_BUYS - (p.buys ?? 0)} left.` };
     case 'surgery': return { title: 'Surgery bay', text: `Cut a card out of a deck for good. ${exciseCost(r)} biomass.` };
     case 'event': {
-      const ev = DERELICT_EVENTS.find((e) => e.id === p.event)!;
+      const ev = findEvent(p.event)!;
       return p.used ? { title: ev.title, text: 'Nothing more here.' } : { title: ev.title, text: ev.text };
     }
   }
@@ -843,7 +870,7 @@ export function actionsAt(r: RunState, x: number, y: number): Action[] {
   if (p.kind === 'vent') out.push({ id: 'rest', label: 'Rest', detail: 'Heal, refill. Enemies return.', ok: near && !p.used });
   if (p.kind === 'nest') {
     cardAction('cut', (pw) => `burn it (needs 3, have ${pw})`, 3);
-    out.push({ id: 'attack', label: 'Attack the nest', detail: `${DERELICT_NEST.length} guardians`, ok: near });
+    out.push({ id: 'attack', label: 'Attack the nest', detail: `${here(r).nest.length} guardians`, ok: near });
   }
   if (p.kind === 'pod') {
     const cost = somaticCost(r.somaticBought);
@@ -863,14 +890,14 @@ export function actionsAt(r: RunState, x: number, y: number): Action[] {
     out.push({ id: 'surgery', label: 'Lie down', detail: `${exciseCost(r)} biomass per cut`, ok: near && r.biomass >= exciseCost(r) });
   }
   if (p.kind === 'event' && !p.used) {
-    const ev = DERELICT_EVENTS.find((e) => e.id === p.event)!;
+    const ev = findEvent(p.event)!;
     ev.options.forEach((o, i) => {
       const detail = o.check ? `${TRAIT_INFO[o.check.t].name} ${o.check.at} · ${Math.round(checkChance(t[o.check.t], o.check.at) * 100)}%` : '';
       out.push({ id: `ev:${i}`, label: o.label, detail, ok: near });
     });
   }
   if (p.kind === 'ship') {
-    out.push({ id: 'launch', label: 'Launch', detail: r.bossDead ? 'Leave the derelict' : 'Kill The First first', ok: near && r.bossDead });
+    out.push({ id: 'launch', label: 'Launch', detail: r.bossDead ? `Leave ${here(r).name}` : `Kill ${here(r).bossName} first`, ok: near && r.bossDead });
   }
   return out;
 }
@@ -899,7 +926,7 @@ export function doAction(r: RunState, x: number, y: number, id: string): boolean
       return true;
     case 'rest': rest(r, p!); return true;
     case 'attack':
-      startFight(r, DERELICT_NEST, r.world.tier, { mobId: -1, tier: r.world.tier, kind: 'nest', reward: false, ambush: false, nestId: p!.id }, false, false, 0);
+      startFight(r, here(r).nest, r.world.tier, { mobId: -1, tier: r.world.tier, kind: 'nest', reward: false, ambush: false, nestId: p!.id }, false, false, 0);
       return true;
     case 'launch': launch(r); return true;
   }
@@ -1007,7 +1034,7 @@ function findLog(r: RunState, id: string): boolean {
 }
 
 function eventChoose(r: RunState, p: Poi, i: number) {
-  const ev = DERELICT_EVENTS.find((e) => e.id === p.event)!;
+  const ev = findEvent(p.event)!;
   const o = ev.options[i];
   if (!o || p.used) return;
   p.used = true;
@@ -1046,7 +1073,7 @@ function eventChoose(r: RunState, p: Poi, i: number) {
     lines.push(`Log found: “${LOGS[out.log].title}”${fresh ? ` (+${LOG_CODONS} Codons)` : ''}. ${LOGS[out.log].text}`);
   }
   r.notice = { title: `${ev.title} · ${ok ? (o.check ? 'success' : o.label) : 'failed'}`, text: lines.join(' ') };
-  if (r.hp <= 0) { die(r, 'The derelict keeps you.'); return; }
+  if (r.hp <= 0) { die(r, `${here(r).name} keeps you.`); return; }
   if (out.card) {
     r.reward = { title: ev.title, options: offerCards(r, out.card), deck: out.card, biomass: 0, codons: 0 };
     r.mode = 'reward';
@@ -1067,8 +1094,64 @@ function rest(r: RunState, p: Poi) {
 
 function launch(r: RunState) {
   r.codons += 10 * r.world.tier;
-  r.mode = 'won';
-  say(r, 'The ship lifts off the derelict.');
+  say(r, `The ship lifts off ${here(r).name}.`);
+  r.mode = chartOptions(r).some((o) => o.state === 'open') ? 'chart' : 'won';
+}
+
+// ---- The star chart ----
+
+export interface ChartEntry {
+  id: string;
+  name: string;
+  pitch: string;
+  state: 'open' | 'visited' | 'lost' | 'unknown';
+}
+
+/** Where the ship can go next. Tier comes from the landing number, not the planet. */
+export function chartOptions(r: RunState): ChartEntry[] {
+  const known = new Set([...r.knownPlanets, ...r.revealed]);
+  return Object.values(PLANETS).filter((p) => p.id !== 'derelict').map((p) => ({
+    id: p.id,
+    name: p.name,
+    pitch: p.pitch,
+    state: r.visited.includes(p.id) ? 'visited' : p.locked ? 'lost' : known.has(p.id) ? 'open' : 'unknown',
+  }));
+}
+
+/** Land on the next planet: a new map one tier higher, same body, same decks. */
+export function land(r: RunState, id: string): boolean {
+  if (r.mode !== 'chart' || !chartOptions(r).some((o) => o.id === id && o.state === 'open')) return false;
+  r.landing += 1;
+  r.planet = id;
+  r.visited.push(id);
+  const w = generateWorld((r.seed + r.landing * 1013) >>> 0, r.landing, id);
+  r.world = w;
+  r.x = w.ship.x;
+  r.y = w.ship.y;
+  r.facing = [0, -1];
+  r.steps = 0;
+  r.storm = 0;
+  r.stormedZones = [];
+  r.zonesVisited = [w.landingZone];
+  r.sealSteps = 0;
+  r.stalk = false;
+  r.flarePower = 0;
+  r.beacons = [];
+  r.bossDead = false;
+  const mh = maxHp(r);
+  r.hp = Math.min(mh, r.hp + Math.floor(mh * 0.3));
+  r.oxygen = maxO2(r);
+  drawExp(r, exploreHandSize(runTraits(r)));
+  r.mode = 'explore';
+  reveal(r);
+  const P = planet(id);
+  say(r, `The ship comes down on ${P.name}. Landing ${r.landing}, tier ${r.landing}.${P.twistText ? ` ${P.twistText}` : ''}`);
+  return true;
+}
+
+/** Stop here and go home with what you have. */
+export function goHome(r: RunState) {
+  if (r.mode === 'chart') r.mode = 'won';
 }
 
 function die(r: RunState, s: string) {
