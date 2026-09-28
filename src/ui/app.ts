@@ -517,10 +517,11 @@ export class App {
     this.refreshOverlay();
   }
 
-  private bar(cur: number, max: number, segs = 20): string {
-    const on = max > 0 ? Math.ceil((Math.max(0, cur) / max) * segs) : 0;
-    const cls = cur / max < 0.25 ? 'crit' : cur / max < 0.5 ? 'lo' : '';
-    return `<div class="bar">${Array.from({ length: segs }, (_, i) => `<i class="${i < on ? cls : 'off'}"></i>`).join('')}</div>`;
+  /** One continuous bar. The second argument stays for call sites that used to pass a segment count. */
+  private bar(cur: number, max: number, _segs = 0): string {
+    const f = max > 0 ? Math.max(0, Math.min(1, cur / max)) : 0;
+    const cls = f < 0.25 ? 'crit' : f < 0.5 ? 'lo' : '';
+    return `<div class="bar"><i class="${cls}" style="width:${(f * 100).toFixed(1)}%"></i></div>`;
   }
 
   private refreshExplore() {

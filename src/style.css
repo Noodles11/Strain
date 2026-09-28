@@ -47,11 +47,10 @@ button { font: inherit; color: inherit; }
 /* ---------- explore HUD ---------- */
 .hud { position: absolute; left: 0; right: 0; top: 0; padding: calc(8px + env(safe-area-inset-top)) var(--gut) 8px; display: flex; flex-direction: column; gap: 6px; pointer-events: none; }
 .hud-row { display: flex; align-items: center; gap: 10px; }
-.bar { position: relative; height: 14px; flex: 1; background: var(--ink); border: 2px solid var(--bone); display: flex; padding: 1px; gap: 1px; }
-.bar i { flex: 1; background: var(--toxin); }
+.bar { position: relative; height: 14px; flex: 1; background: var(--ink); border: 2px solid var(--bone); padding: 1px; }
+.bar i { display: block; height: 100%; background: var(--toxin); transition: width 0.25s ease-out; }
 .bar i.lo { background: var(--sodium); }
 .bar i.crit { background: var(--flesh); }
-.bar i.off { background: transparent; }
 .stat { font-weight: 700; font-size: 15px; white-space: nowrap; text-shadow: 0 1px 0 var(--ink); }
 .pips { display: flex; gap: 2px; }
 .pips b { width: 7px; height: 12px; border: 1.5px solid var(--foc); }
@@ -75,6 +74,9 @@ button { font: inherit; color: inherit; }
 .card::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 4px; background: var(--tint, var(--dim)); }
 .card .cost { position: absolute; top: 6px; left: 5px; font-family: var(--display); font-size: 20px; line-height: 1; color: var(--sodium); }
 .card .cost.o2 { color: var(--foc); }
+.card .cost.pips { display: flex; gap: 5px; top: 9px; left: 8px; }
+.card .cost.pips b { width: 9px; height: 9px; border: 2px solid var(--sodium); background: var(--sodium); transform: rotate(45deg); }
+.card .cost.free { font-family: var(--ui); font-size: 11px; font-weight: 700; letter-spacing: 0.08em; top: 7px; }
 .card .glyph { position: absolute; top: 6px; right: 6px; font-size: 16px; line-height: 1; color: var(--tint, var(--dim)); }
 .card .name { font-weight: 700; font-size: 13px; overflow-wrap: break-word; line-height: 1.05; text-transform: uppercase; letter-spacing: 0.02em; min-height: 28px; }
 .card .ln { font-size: 13px; line-height: 1.15; }
