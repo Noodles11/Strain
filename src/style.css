@@ -76,7 +76,6 @@ button { font: inherit; color: inherit; }
 .card .cost.o2 { color: var(--foc); }
 .card .cost.pips { display: flex; gap: 5px; top: 9px; left: 8px; }
 .card .cost.pips b { width: 9px; height: 9px; border: 2px solid var(--sodium); background: var(--sodium); transform: rotate(45deg); }
-.card .cost.free { font-family: var(--ui); font-size: 11px; font-weight: 700; letter-spacing: 0.08em; top: 7px; }
 .card .glyph { position: absolute; top: 6px; right: 6px; font-size: 16px; line-height: 1; color: var(--tint, var(--dim)); }
 .card .name { font-weight: 700; font-size: 13px; overflow-wrap: break-word; line-height: 1.05; text-transform: uppercase; letter-spacing: 0.02em; min-height: 28px; }
 .card .ln { font-size: 13px; line-height: 1.15; }

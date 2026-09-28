@@ -30,7 +30,7 @@ export function cardHtml(id: string, t: Traits, o: CardOpts = {}): string {
   const cls = ['card', tint ? `t-${tint}` : '', o.off ? 'off' : '', o.big ? 'big' : '', def.medic ? 'medic' : '', o.fleeting ? 'fleeting' : '', o.extraClass ?? ''].join(' ');
   // tactical costs use the same diamonds as the energy bar; exploration costs are oxygen
   const cost = def.deck === 'exp' ? `<div class="cost o2">${r.cost}</div>`
-    : r.cost > 0 ? `<div class="cost pips" title="${r.cost} energy">${'<b></b>'.repeat(r.cost)}</div>` : '<div class="cost free">FREE</div>';
+    : r.cost > 0 ? `<div class="cost pips" title="${r.cost} energy">${'<b></b>'.repeat(r.cost)}</div>` : '';
   return `<div class="${cls}">${cost}<div class="glyph">${def.glyph}</div><div class="name">${esc(def.name)}${o.donor ? ' ⊕' : ''}</div>${body}${kws ? `<div class="kw">${esc(kws)}</div>` : ''}</div>`;
 }
 
