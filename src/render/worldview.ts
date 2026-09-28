@@ -81,7 +81,7 @@ export class WorldView {
       for (let x = x0; x <= x1; x++) {
         if (x < 0 || y < 0 || x >= w.w || y >= w.h) continue;
         const i = idx(w, x, y);
-        if (!w.seen[i]) continue;
+        // terrain is always drawn; fog is a hatch on top
         const tile = w.tiles[i];
         if (tile === T_WALL) continue;
         const X = this.sx(x);
@@ -121,7 +121,7 @@ export class WorldView {
       for (let x = x0; x <= x1; x++) {
         if (x < 0 || y < 0 || x >= w.w || y >= w.h) continue;
         const i = idx(w, x, y);
-        if (!w.seen[i] || w.tiles[i] !== T_WALL) continue;
+        if (w.tiles[i] !== T_WALL) continue;
         const X = this.sx(x);
         const Y = this.sy(y);
         const below = y + 1 < w.h ? w.tiles[idx(w, x, y + 1)] : T_WALL;
@@ -167,32 +167,52 @@ export class WorldView {
       }
     }
 
-    // fog, darkness and storm
+    // fog of war: a hatch over the tiles, never a blackout.
+    // One layer of lines for remembered or dark ground, a crossing second layer for ground never seen.
+    const thin: [number, number, number][] = [];
+    const thick: [number, number, number][] = [];
     for (let y = y0; y <= y1; y++) {
       for (let x = x0; x <= x1; x++) {
         if (x < 0 || y < 0 || x >= w.w || y >= w.h) continue;
         const i = idx(w, x, y);
-        if (!w.seen[i]) continue;
-        const X = this.sx(x);
-        const Y = this.sy(y) - (w.tiles[i] === T_WALL ? T * 0.42 : 0);
-        let a = inView(r, x, y) ? 0 : 0.55;
-        if (isDark(r, x, y)) a = Math.min(0.8, a + 0.25);
-        if (a > 0) {
-          ctx.fillStyle = `rgba(8,9,11,${a})`;
-          ctx.fillRect(X, Y, T + 0.5, T + 0.5);
-        }
+        const wall = w.tiles[i] === T_WALL;
+        const box: [number, number, number] = [this.sx(x), this.sy(y) - (wall ? lift : 0), T + (wall ? lift : 0)];
+        if (!w.seen[i]) { thin.push(box); thick.push(box); }
+        else if (!inView(r, x, y) || isDark(r, x, y)) thin.push(box);
         if (inStorm(r, x, y)) {
           ctx.fillStyle = 'rgba(122,74,179,0.28)';
-          ctx.fillRect(X, Y, T + 0.5, T + 0.5);
-          ctx.strokeStyle = 'rgba(216,207,184,0.35)';
-          ctx.beginPath();
-          const o = ((t * 60 + x * 17 + y * 29) % T);
-          ctx.moveTo(X + o, Y);
-          ctx.lineTo(X + o - T * 0.3, Y + T);
-          ctx.stroke();
+          ctx.fillRect(box[0], box[1], T + 0.5, box[2] + 0.5);
+          ctx.fillStyle = 'rgba(216,207,184,0.4)';
+          const o = (t * 90 + x * 17 + y * 29) % T;
+          ctx.fillRect(box[0] + ((x * 13) % T), box[1] + o, 1.5, T * 0.25);
         }
       }
     }
+    this.hatch(ctx, thin, 1);
+    this.hatch(ctx, thick, -1);
+  }
+
+  /** Diagonal lines over the given boxes, anchored to the world so they don't swim as the camera moves. */
+  private hatch(ctx: CanvasRenderingContext2D, boxes: [number, number, number][], dir: 1 | -1) {
+    if (!boxes.length) return;
+    const T = this.T;
+    const gap = Math.max(4, T * 0.2);
+    ctx.save();
+    ctx.beginPath();
+    for (const [X, Y, h] of boxes) ctx.rect(X, Y, T + 0.5, h + 0.5);
+    ctx.clip();
+    ctx.strokeStyle = 'rgba(8,9,11,0.9)';
+    ctx.lineWidth = Math.max(1.5, T * 0.07);
+    ctx.beginPath();
+    const span = this.W + this.H;
+    // world phase: lines sit on x ± y = k·gap in world pixels
+    const phase = ((this.camX * T + dir * this.camY * T) % gap + gap) % gap;
+    for (let c = -span - phase; c < span * 2; c += gap) {
+      if (dir === 1) { ctx.moveTo(c, 0); ctx.lineTo(c - this.H, this.H); }
+      else { ctx.moveTo(c - this.H, 0); ctx.lineTo(c, this.H); }
+    }
+    ctx.stroke();
+    ctx.restore();
   }
 
   private drawGate(ctx: CanvasRenderingContext2D, r: RunState, x: number, y: number, X: number, Y: number, t: number, debris: string) {
