@@ -89,7 +89,12 @@ Bot sim, two landings (rushes each boss, 20 seeds):
 - Enemies are drawn to scale with each other: a Hull Tick is about half as tall as a person-sized Copy.
 - Entering a fight, the camera swings from the top-down map down to eye level behind the clone (1.1 s);
   the clone and enemies fade in, then the fight begins. Shown HP holds at the pre-fight values meanwhile.
-- Walls close to the camera fade out so they never block the view; far tiles sink into fog.
+- The camera sits 3 tiles behind the clone when the corridor allows; otherwise it swings round to either side
+  (up to ~57°) or moves in closer, until it has room and a clear line to the fighters.
+- Only walls standing between the camera and the fighters fade out; walls beside the clone or the enemies stay solid.
+  Tiles and walls cut by the camera's near plane are clipped, not dropped, so there are no holes.
+- Back-row enemies stand only on open floor; walls are never removed to make room for them.
+- Far tiles sink into fog.
 - Dark sections darken the room; the storm tints it and adds rain.
 
 ## New lab mobs

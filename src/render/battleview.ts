@@ -112,7 +112,7 @@ export class BattleView {
     const front = alive.find((f) => f.uid === this.target) ?? alive[0] ?? shown[0];
     const back = shown.filter((f) => f !== front);
     // further away = higher on the floor and smaller: one tile ahead for the front foe, two for the back row
-    const slots: [number, number][] = [[2, -0.8], [2, 0.8]];
+    const slots: [number, number][] = place ? this.place.backSlots(place.run.world, place.at) : [[2, -0.8], [2, 0.8]];
     const frontPx = place ? this.place.ground(place.at, 1, 0)?.px ?? 1 : 1;
     this.hit = [];
     this.anchors.clear();

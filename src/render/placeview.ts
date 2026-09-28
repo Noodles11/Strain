@@ -48,17 +48,80 @@ export class PlaceView {
   private ry = 0;
   private cosP = 1;
   private sinP = 0;
+  private e = 0;
+  /** Horizontal distance from the final camera to the clone. */
+  private reach = BACK;
+  private shotKey = '';
+  private shot = { off: 0, back: BACK };
+
+  /**
+   * Where the battle camera sits: straight behind the clone if the corridor allows,
+   * else swung round to one side (or pulled in) until nothing solid stands between
+   * the lens and the fighters.
+   */
+  private pickShot(w: World, at: FightAt) {
+    const key = `${w.seed}:${at.x},${at.y},${at.fx},${at.fy}`;
+    if (key === this.shotKey) return;
+    this.shotKey = key;
+    const px = at.x + 0.5;
+    const py = at.y + 0.5;
+    const a1 = Math.atan2(at.fy, at.fx);
+    const clear = (x0: number, y0: number, x1: number, y1: number) => {
+      for (let i = 0; i <= 12; i++) {
+        const x = Math.floor(lerp(x0, x1, i / 12));
+        const y = Math.floor(lerp(y0, y1, i / 12));
+        if (!openAt(w, x, y)) return false;
+      }
+      return true;
+    };
+    // the camera also needs a little room around itself, or a wall face fills the lens
+    const roomy = (x: number, y: number) => [[0, 0], [0.3, 0], [-0.3, 0], [0, 0.3], [0, -0.3]].every(([dx, dy]) => openAt(w, Math.floor(x + dx), Math.floor(y + dy)));
+    for (const backs of [[3, 2.5], [2, 1.6]]) {
+      for (const off of [0, 0.35, -0.35, 0.7, -0.7, 1.0, -1.0]) {
+        for (const back of backs) {
+          const cx = px - Math.cos(a1 + off) * back;
+          const cy = py - Math.sin(a1 + off) * back;
+          if (!roomy(cx, cy)) continue;
+          if (!clear(cx, cy, px, py) || !clear(cx, cy, px + at.fx, py + at.fy)) continue;
+          this.shot = { off, back };
+          return;
+        }
+      }
+    }
+    this.shot = { off: 0, back: 1.6 };
+  }
+
+  /** Back-row spots (tiles ahead, tiles to the right) that stand on open floor, not in a wall. */
+  backSlots(w: World, at: FightAt): [number, number][] {
+    const cands: [number, number][] = [[2, -0.8], [2, 0.8], [2, 0], [2.7, -0.5], [2.7, 0.5], [3, 0], [1.6, -0.9], [1.6, 0.9], [3.5, 0]];
+    const out: [number, number][] = [];
+    const used: [number, number][] = [[1, 0], [0, 0]];
+    for (const [a, s] of cands) {
+      const x = Math.floor(at.x + 0.5 + at.fx * a - at.fy * s);
+      const y = Math.floor(at.y + 0.5 + at.fy * a + at.fx * s);
+      if (!openAt(w, x, y)) continue;
+      if (used.some(([ua, us]) => Math.hypot(ua - a, us - s) < 0.9)) continue;
+      out.push([a, s]);
+      used.push([a, s]);
+      if (out.length === 2) break;
+    }
+    while (out.length < 2) out.push(out.length ? [2, 0.4] : [2, -0.4]);
+    return out;
+  }
 
   /** Set up the camera for transition progress k (0..1). */
-  setCamera(at: FightAt, W: number, H: number, k: number) {
+  setCamera(at: FightAt, W: number, H: number, k: number, w?: World) {
+    if (w) this.pickShot(w, at);
     const e = ease(clamp(k));
+    this.e = e;
     const T = W / 11;
     this.F = W * 0.9;
     const px = at.x + 0.5;
     const py = at.y + 0.5;
-    // yaw: from map-north toward the foe, the short way round
+    const { off, back } = this.shot;
+    // yaw: from map-north toward the foe, the short way round; a swung camera looks partly back across
     const a0 = Math.atan2(-1, 0);
-    let a1 = Math.atan2(at.fy, at.fx);
+    let a1 = Math.atan2(at.fy, at.fx) + off * 0.55;
     while (a1 - a0 > Math.PI) a1 -= Math.PI * 2;
     while (a1 - a0 < -Math.PI) a1 += Math.PI * 2;
     const a = lerp(a0, a1, e);
@@ -70,23 +133,53 @@ export class PlaceView {
     this.cosP = Math.cos(pitch);
     this.sinP = Math.sin(pitch);
     this.hc = lerp(this.F / T, EYE, e);
-    this.camX = px - at.fx * BACK * e;
-    this.camY = py - at.fy * BACK * e;
+    const ca = Math.atan2(at.fy, at.fx) + off;
+    this.camX = px - Math.cos(ca) * back * e;
+    this.camY = py - Math.sin(ca) * back * e;
+    this.reach = back;
     this.cx = lerp(W / 2, W * 0.7, e);
     this.cy = lerp(H / 2, H * 0.52, e);
   }
 
-  /** Camera-space depth and screen position of a world point (tiles; z up). */
-  project(wx: number, wy: number, z: number): { x: number; y: number; d: number } | null {
+  /** Camera space: right, up, depth. */
+  private toCam(wx: number, wy: number, z: number) {
     const dx = wx - this.camX;
     const dy = wy - this.camY;
     const side = dx * this.rx + dy * this.ry;
     const fwd = dx * this.fx + dy * this.fy;
     const zz = z - this.hc;
-    const d = fwd * this.cosP - zz * this.sinP;
-    if (d < NEAR) return null;
-    const up = fwd * this.sinP + zz * this.cosP;
-    return { x: this.cx + (side * this.F) / d, y: this.cy - (up * this.F) / d, d };
+    return { s: side, u: fwd * this.sinP + zz * this.cosP, d: fwd * this.cosP - zz * this.sinP };
+  }
+
+  private toScreen(c: { s: number; u: number; d: number }) {
+    return { x: this.cx + (c.s * this.F) / c.d, y: this.cy - (c.u * this.F) / c.d, d: c.d };
+  }
+
+  /** Camera-space depth and screen position of a world point (tiles; z up). */
+  project(wx: number, wy: number, z: number): { x: number; y: number; d: number } | null {
+    const c = this.toCam(wx, wy, z);
+    return c.d < NEAR ? null : this.toScreen(c);
+  }
+
+  /**
+   * A world polygon on screen, cut at the near plane rather than dropped, so tiles and
+   * walls right beside the camera still get drawn instead of leaving holes.
+   */
+  private projPoly(pts: [number, number, number][]): { x: number; y: number; d: number }[] | null {
+    const cam = pts.map(([x, y, z]) => this.toCam(x, y, z));
+    const out: { s: number; u: number; d: number }[] = [];
+    for (let i = 0; i < cam.length; i++) {
+      const a = cam[i];
+      const b = cam[(i + 1) % cam.length];
+      const ain = a.d >= NEAR;
+      const bin = b.d >= NEAR;
+      if (ain) out.push(a);
+      if (ain !== bin) {
+        const k = (NEAR - a.d) / (b.d - a.d);
+        out.push({ s: lerp(a.s, b.s, k), u: lerp(a.u, b.u, k), d: NEAR });
+      }
+    }
+    return out.length >= 3 ? out.map((c) => this.toScreen(c)) : null;
   }
 
   /** A floor point `ahead` tiles in front of the clone and `side` tiles to its right. */
@@ -100,11 +193,11 @@ export class PlaceView {
 
   draw(ctx: CanvasRenderingContext2D, r: RunState, at: FightAt, W: number, H: number, t: number, th: Theme, k: number) {
     const w = r.world;
-    this.setCamera(at, W, H, k);
+    this.setCamera(at, W, H, k, w);
     const e = ease(clamp(k));
     const wallH = th.crystals ? 2.1 : 1.7;
 
-    // tiles the fighters stand on always read as open floor
+    // the clone's and the front foe's tiles always read as open floor (the back row is placed on open tiles)
     const keep = new Set<number>();
     const mark = (ahead: number, side: number) => {
       const x = Math.floor(at.x + 0.5 + at.fx * ahead - at.fy * side);
@@ -113,8 +206,6 @@ export class PlaceView {
     };
     mark(0, 0);
     mark(1, 0);
-    mark(2, -0.8);
-    mark(2, 0.8);
 
     type Item = { d: number; draw: () => void };
     const floors: Item[] = [];
@@ -124,8 +215,9 @@ export class PlaceView {
       for (let x = at.x - reach; x <= at.x + reach; x++) {
         if (x < 0 || y < 0 || x >= w.w || y >= w.h) continue;
         const i = idx(w, x, y);
-        const c = this.project(x + 0.5, y + 0.5, 0);
-        if (!c || c.d > FAR + 2) continue;
+        // tiles straddling the camera still count: their near part gets clipped, not dropped
+        const c = this.toCam(x + 0.5, y + 0.5, 0);
+        if (c.d < -1 || c.d > FAR + 2) continue;
         let tile = w.tiles[i];
         if (keep.has(i)) tile = tile === T_WALL ? 1 : tile;
         if (tile === T_WALL) {
@@ -168,9 +260,15 @@ export class PlaceView {
     }
   }
 
-  /** Near things fade so they never hide the fight; far things sink into the dark. */
-  private nearFade(d: number): number {
-    return clamp((d - 1.2) / 1.8);
+  /**
+   * Walls that stand between the lens and the fighters fade to a ghost; walls beside
+   * the clone or the enemies stay solid.
+   */
+  private occluderFade(x: number, y: number): number {
+    const c = this.toCam(x + 0.5, y + 0.5, this.hc);
+    const fwd = c.d;
+    const blocks = fwd < this.reach + 0.2 && Math.abs(c.s) < 0.55 + 0.25 * clamp(fwd / this.reach);
+    return blocks ? lerp(1, 0.15, this.e) : 1;
   }
 
   /** Distance along the ground from the camera, so the top-down view isn't fogged. */
@@ -190,9 +288,8 @@ export class PlaceView {
   }
 
   private floor(ctx: CanvasRenderingContext2D, x: number, y: number, hazard: string | null, th: Theme, t: number) {
-    const pts = [this.project(x, y, 0), this.project(x + 1, y, 0), this.project(x + 1, y + 1, 0), this.project(x, y + 1, 0)];
-    if (pts.some((p) => !p)) return;
-    const q = pts as { x: number; y: number; d: number }[];
+    const q = this.projPoly([[x, y, 0], [x + 1, y, 0], [x + 1, y + 1, 0], [x, y + 1, 0]]);
+    if (!q) return;
     const d = this.far(x + 0.5, y + 0.5);
     ctx.fillStyle = th.floor;
     poly(ctx, q);
@@ -213,9 +310,8 @@ export class PlaceView {
 
   /** The ceiling over open ground: plain dark panels. */
   private ceiling(ctx: CanvasRenderingContext2D, x: number, y: number, h: number, th: Theme) {
-    const pts = [this.project(x, y, h), this.project(x + 1, y, h), this.project(x + 1, y + 1, h), this.project(x, y + 1, h)];
-    if (pts.some((p) => !p)) return;
-    const q = pts as { x: number; y: number; d: number }[];
+    const q = this.projPoly([[x, y, h], [x + 1, y, h], [x + 1, y + 1, h], [x, y + 1, h]]);
+    if (!q) return;
     ctx.fillStyle = th.wallFace;
     poly(ctx, q);
     ctx.fill();
@@ -227,10 +323,7 @@ export class PlaceView {
 
   /** A raised tile: side faces toward the camera (and the top when seen from above). */
   private box(ctx: CanvasRenderingContext2D, w: World, x: number, y: number, h: number, face: string, top: string, edge: string, th: Theme, isWall: boolean) {
-    const c = this.project(x + 0.5, y + 0.5, h / 2);
-    if (!c) return;
-    const alpha = this.nearFade(c.d);
-    if (alpha <= 0.02) return;
+    const alpha = this.occluderFade(x, y);
     ctx.save();
     ctx.globalAlpha = alpha;
     const sides: [number, number, number, number, number, number][] = [
@@ -248,9 +341,9 @@ export class PlaceView {
       const mx = (x0 + x1) / 2;
       const my = (y0 + y1) / 2;
       if ((this.camX - mx) * nx + (this.camY - my) * ny <= 0) continue;
-      const pts = [this.project(x0, y0, 0), this.project(x1, y1, 0), this.project(x1, y1, h), this.project(x0, y0, h)];
-      if (pts.some((p) => !p)) continue;
-      const q = pts as { x: number; y: number; d: number }[];
+      const q = this.projPoly([[x0, y0, 0], [x1, y1, 0], [x1, y1, h], [x0, y0, h]]);
+      if (!q) continue;
+      const full = q.length === 4 && q.every((p) => p.d > NEAR);
       // walls take the map's wall-top tone, shaded by which way they face
       const shade = 0.45 + (ny > 0 ? 0.3 : ny < 0 ? 0 : 0.15) + (nx > 0 ? 0.1 : 0);
       ctx.fillStyle = face;
@@ -276,12 +369,14 @@ export class PlaceView {
         if (s0 && s1) { ctx.moveTo(s0.x, s0.y); ctx.lineTo(s1.x, s1.y); }
         ctx.stroke();
       }
-      ctx.strokeStyle = edge;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(q[2].x, q[2].y);
-      ctx.lineTo(q[3].x, q[3].y);
-      ctx.stroke();
+      if (full) {
+        ctx.strokeStyle = edge;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(q[2].x, q[2].y);
+        ctx.lineTo(q[3].x, q[3].y);
+        ctx.stroke();
+      }
       if (!isWall && edge === INK.sodium) {
         // a door's hazard band
         const a = this.project(x0, y0, h * 0.8);
@@ -297,9 +392,8 @@ export class PlaceView {
       this.fogOver(ctx, q, this.far(mx, my), th);
     }
     if (this.hc > h) {
-      const pts = [this.project(x, y, h), this.project(x + 1, y, h), this.project(x + 1, y + 1, h), this.project(x, y + 1, h)];
-      if (!pts.some((p) => !p)) {
-        const q = pts as { x: number; y: number; d: number }[];
+      const q = this.projPoly([[x, y, h], [x + 1, y, h], [x + 1, y + 1, h], [x, y + 1, h]]);
+      if (q) {
         ctx.fillStyle = top;
         poly(ctx, q);
         ctx.fill();
@@ -329,6 +423,15 @@ export class PlaceView {
     }
     ctx.restore();
   }
+}
+
+/** Floor a camera or a fighter can stand on: not rock, not a shut gate, not off the map. */
+function openAt(w: World, x: number, y: number): boolean {
+  if (x < 0 || y < 0 || x >= w.w || y >= w.h) return false;
+  const t = w.tiles[idx(w, x, y)];
+  if (t === T_WALL) return false;
+  if (t === T_GATE) return !!gateAt(w, x, y)?.open;
+  return true;
 }
 
 function poly(ctx: CanvasRenderingContext2D, pts: { x: number; y: number }[]) {
