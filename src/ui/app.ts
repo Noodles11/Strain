@@ -21,6 +21,7 @@ import { Print } from '../render/print';
 import { WorldView } from '../render/worldview';
 import { idx, T_GATE, T_HAZARD, T_WALL } from '../world/gen';
 import { cardDetail, cardHtml, esc } from './cardview';
+import { icon } from './icons';
 
 type Sheet =
   | { kind: 'action'; x: number; y: number }
@@ -74,6 +75,9 @@ export class App {
   private hidden = new Set<number>();
   private lines: string[] = [];
   private pendingLead = 0;
+  /** Foes whose move is still playing out: they keep showing the intent they are acting on. */
+  private pendingAct = new Set<number>();
+  private shownIntent = new Map<number, string>();
   private sheet: Sheet = null;
   private msgTimer = 0;
   private lastMsgCount = 0;
@@ -197,7 +201,7 @@ export class App {
     if (want === this.layout) { this.refresh(); return; }
     this.layout = want;
     if (want === 'battle') {
-      this.root.innerHTML = `<div class="scene" style="height:54%"><canvas class="c2"></canvas><div class="plates"></div><div class="plate me"></div></div>
+      this.root.innerHTML = `<div class="scene" style="height:54%"><canvas class="c2"></canvas><div class="plates"></div><div class="unit me"></div></div>
         <div class="battle-ui"><div class="textbox frame"></div><div class="hand"></div>
         <div class="controls"><div class="energy"></div><div class="piles"></div><div class="grow"></div>
         <button class="btn small" data-b="flee">Flee</button><button class="btn primary" data-b="end">End turn</button></div></div>
@@ -421,9 +425,29 @@ export class App {
       if (e.k === 'heal') this.dispP -= e.n;
       if (e.k === 'summon') this.hidden.add(e.uid);
     }
+    for (const e of ev) if (e.k === 'act') this.pendingAct.add(e.uid);
     this.queue.push(...ev);
     this.saveRun();
     if (!this.qTimer) this.next();
+  }
+
+  /** A foe's next move, with its attack already cut down by your plating (4×2 into 5 plate reads 0×2). */
+  private intentHtml(b: NonNullable<RunState['battle']>, f: NonNullable<RunState['battle']>['foes'][number]): string {
+    if (f.sick) return 'SUMMONED';
+    const n = intentNumbers(b, f);
+    const parts: string[] = [];
+    if (currentIntent(f).attack !== undefined) {
+      const hit = Math.max(0, n.attack - b.player.plate);
+      const cut = hit < n.attack ? ` <s>${n.attack}</s>` : '';
+      parts.push(`<span class="atk">${icon('dmg')}${hit}${n.hits > 1 ? `×${n.hits}` : ''}${cut}</span>`);
+    }
+    if (n.plate) parts.push(`${icon('plate')}${n.plate}`);
+    if (n.strength) parts.push(`${icon('empower')}${n.strength}`);
+    if (n.weak) parts.push(`${icon('weak')}${n.weak}`);
+    if (n.expose) parts.push(`${icon('expose')}${n.expose}`);
+    if (n.summon) parts.push('SUMMON');
+    if (n.ally) parts.push(`${icon('all')}${icon('empower')}${n.ally}`);
+    return parts.join(' ') || esc(n.label);
   }
 
   /** Show one battle event. Returns how long it holds the queue (ms), if not the default. */
@@ -437,7 +461,7 @@ export class App {
       case 'text': this.lines.push(e.s); if (this.lines.length > 2) this.lines.shift(); break;
       case 'hitFoe': this.dispFoe.set(e.uid, (this.dispFoe.get(e.uid) ?? 0) - e.n); this.bv.anim(e.uid).flash = 1; break;
       case 'hitPlayer': this.dispP -= e.n; this.bv.player.flash = e.n > 0 ? 1 : 0.3; this.bv.shake = e.n > 0 ? Math.min(1, 0.3 + e.n / 20) : 0; break;
-      case 'act': this.bv.anim(e.uid).lunge = 1; break;
+      case 'act': this.bv.anim(e.uid).lunge = 1; this.actedSoon(e.uid); break;
       case 'die': this.bv.anim(e.uid).dead = 0.01; break;
       case 'heal': this.dispP += e.n; this.bv.player.heal = 1; break;
       case 'summon': this.hidden.delete(e.uid); break;
@@ -466,7 +490,13 @@ export class App {
     this.finishQueue();
   }
 
+  /** Once a foe's attack has landed, its plate can move on to its next intent. */
+  private actedSoon(uid: number) {
+    window.setTimeout(() => { this.pendingAct.delete(uid); if (this.layout === 'battle') this.refreshBattle(); }, 700);
+  }
+
   private finishQueue() {
+    this.pendingAct.clear();
     const r = this.run;
     if (!r) return;
     this.hidden.clear();
@@ -589,38 +619,48 @@ export class App {
         const hp = Math.max(0, this.dispFoe.get(f.uid) ?? f.hp);
         const def = ENEMIES[f.id];
         let intent = '';
-        if (f.alive && quiet && b.phase === 'player') {
-          const n = intentNumbers(b, f);
-          const parts: string[] = [];
-          if (f.sick) parts.push('SUMMONED');
-          else if (currentIntent(f).attack !== undefined) parts.push(`ATK ${n.attack}${n.hits > 1 ? `×${n.hits}` : ''}`);
-          if (n.plate) parts.push(`PLATE ${n.plate}`);
-          if (n.strength) parts.push(`STR+${n.strength}`);
-          if (n.weak) parts.push(`weak ${n.weak}`);
-          if (n.expose) parts.push(`expose ${n.expose}`);
-          if (n.summon) parts.push('summon');
-          if (n.ally) parts.push(`ALLIES STR+${n.ally}`);
-          intent = parts.join(' ') || n.label;
+        if (f.alive && (b.phase === 'player' || this.pendingAct.has(f.uid))) {
+          if (this.pendingAct.has(f.uid)) intent = this.shownIntent.get(f.uid) ?? '';
+          else {
+            intent = this.intentHtml(b, f);
+            this.shownIntent.set(f.uid, intent);
+          }
         }
-        const st = [f.plate ? `⬢${f.plate}` : '', f.strength ? `▲${f.strength}` : '', f.weak ? `weak ${f.weak}` : '', f.expose ? `exp ${f.expose}` : '', f.tag ? `tag ${f.tag}` : ''].filter(Boolean).join(' ');
-        return `<div class="plate ${f.uid === tgt && aliveFoes(b).length > 1 ? 'tgt' : ''} ${gone ? 'gone' : ''}" data-f="${f.uid}">
-          <div class="top"><span class="nm">${def.rank === 'boss' ? '☠ ' : def.rank === 'elite' ? '✦ ' : ''}${esc(def.name)}</span><span class="hpn">${hp}/${f.maxHp}</span></div>
-          ${this.bar(hp, f.maxHp, 16)}<div class="row2"><span class="intent">${intent}</span><span class="st">${st}</span></div></div>`;
+        const tabs = [
+          f.plate ? `${icon('plate')}${f.plate}` : '',
+          f.strength ? `${icon('empower')}${f.strength}` : '',
+          f.weak ? `${icon('weak')}${f.weak}` : '',
+          f.expose ? `${icon('expose')}${f.expose}` : '',
+          f.tag ? `${icon('tag')}${f.tag}` : '',
+        ].filter(Boolean);
+        return `<div class="unit ${gone ? 'gone' : ''}" data-f="${f.uid}">
+          <div class="plate ${f.uid === tgt && aliveFoes(b).length > 1 ? 'tgt' : ''}">
+          <div class="top"><span class="nm">${def.rank === 'boss' ? '☠ ' : def.rank === 'elite' ? '✦ ' : ''}${esc(def.name)}</span><span class="hpn">${hp}<small>/${f.maxHp}</small></span></div>
+          ${this.bar(hp, f.maxHp)}<div class="row2"><span class="intent">${intent || '&nbsp;'}</span></div></div>
+          ${tabs.length ? `<div class="tab">${tabs.map((x) => `<span>${x}</span>`).join('')}</div>` : ''}</div>`;
       }).join('');
       plates.querySelectorAll<HTMLElement>('[data-f]').forEach((el) => el.addEventListener('click', () => {
         this.bv.target = Number(el.dataset.f);
         this.refreshBattle();
       }));
     }
-    const me = this.root.querySelector<HTMLElement>('.plate.me');
+    const me = this.root.querySelector<HTMLElement>('.unit.me');
     if (me) {
       me.style.top = `${this.sh * 0.68}px`;
       const p = b.player;
       const hp = Math.max(0, this.dispP);
-      const st = [p.plate ? `⬢${p.plate}` : '', p.weak ? `weak ${p.weak}` : '', p.expose ? `exp ${p.expose}` : '',
-        ...TRAITS.filter((k) => b.surge[k]).map((k) => `${TRAIT_INFO[k].short}${b.surge[k] > 0 ? '+' : ''}${b.surge[k]}`)].filter(Boolean).join(' ');
-      me.innerHTML = `<div class="top"><span class="nm">${cloneName(r.clone)}</span><span class="hpn">${hp}/${p.maxHp}</span></div>
-        ${this.bar(hp, p.maxHp, 16)}<div class="row2"><span class="st">${st || '&nbsp;'}</span><span class="st">◆${b.biomass}</span></div>`;
+      const tabs = [
+        p.plate ? `${icon('plate')}${p.plate}` : '',
+        p.keep ? `${icon('plate')}${p.keep}<small>↻</small>` : '',
+        p.weak ? `${icon('weak')}${p.weak}` : '',
+        p.expose ? `${icon('expose')}${p.expose}` : '',
+        b.empower ? `${icon('empower')}${b.empower}` : '',
+        b.triage ? `${icon('triage')}${b.triage}` : '',
+        ...TRAITS.filter((k) => b.surge[k]).map((k) => `<b class="${k}">${TRAIT_INFO[k].short}${b.surge[k] > 0 ? '+' : ''}${b.surge[k]}</b>`),
+      ].filter(Boolean);
+      me.innerHTML = `${tabs.length ? `<div class="tab">${tabs.map((x) => `<span>${x}</span>`).join('')}</div>` : ''}
+        <div class="plate"><div class="top"><span class="nm">${cloneName(r.clone)}</span><span class="hpn">${hp}<small>/${p.maxHp}</small></span></div>
+        ${this.bar(hp, p.maxHp)}<div class="row2"><span class="st">${icon('bio')}${b.biomass}</span></div></div>`;
     }
     const tb = this.root.querySelector('.textbox');
     if (tb) {
