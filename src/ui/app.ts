@@ -3,8 +3,8 @@ import { CARDS } from '../core/cards';
 import { ENEMIES } from '../core/enemies';
 import { LOGS } from '../core/events';
 import { IMPLANTS } from '../core/implants';
-import { PLANETS } from '../core/planets';
-import { canRaise, loadMeta, newMeta, raise, RUN_KEY, saveMeta, settleRun, type Meta } from '../core/meta';
+import { planetDepth, PLANETS } from '../core/planets';
+import { canRaise, loadMeta, markLanded, newMeta, raise, RUN_KEY, saveMeta, settleRun, type Meta } from '../core/meta';
 import {
   actionsAt, bEnd, bFlee, bPick, bPlay, canExcise, chartOptions, goHome, here, land, describeAt, doAction, eatValue, excise, exciseCost, expCard, expUsable, isInteractable, isSelfCard, migrateRun,
   lootChoose, lootDone, maxHp, mobAt, newRun, pathTo, playExp, renderValue, rewardPick, runTraits, step, stormIn,
@@ -182,7 +182,7 @@ export class App {
       ${hasRun
         ? `<div class="row"><button class="btn primary" data-go="continue">Continue ${cloneName(this.run!.clone)}</button></div>
            <div class="row"><button class="btn danger" data-go="abandon">Abandon that print</button></div>`
-        : `<div class="row"><button class="btn primary" data-go="launch">Print ${cloneName(m.clone)}</button></div>`}
+        : this.launchRows(m)}
       <div class="sub">Runs ${m.runs} · Cleared ${m.wins} · Codons earned ${m.totalCodons}</div>
       <details class="codex"><summary>Codex · ${m.logs.length}/${Object.keys(LOGS).length} logs</summary>
         ${Object.entries(LOGS).map(([id, l]) => m.logs.includes(id) ? `<p><b>${esc(l.title)}</b><br>${esc(l.text)}</p>` : '<p class="sub">— not found —</p>').join('')}</details>
@@ -194,7 +194,7 @@ export class App {
     this.root.querySelectorAll<HTMLButtonElement>('[data-go]').forEach((b) => b.addEventListener('click', () => {
       const go = b.dataset.go;
       if (go === 'launch') {
-        this.run = newRun(this.meta, (Math.random() * 2 ** 31) >>> 0);
+        this.run = newRun(this.meta, (Math.random() * 2 ** 31) >>> 0, b.dataset.dest ?? 'derelict');
         this.saveRun();
         this.enterRun();
       } else if (go === 'continue') this.enterRun();
@@ -211,9 +211,17 @@ export class App {
     }));
   }
 
+  /** Print buttons: the Derelict, plus every planet a clone has already reached. */
+  private launchRows(m: Meta): string {
+    const dests = ['derelict', ...m.landed.filter((id) => id !== 'derelict' && PLANETS[id])];
+    if (dests.length === 1) return `<div class="row"><button class="btn primary" data-go="launch" data-dest="derelict">Print ${cloneName(m.clone)}</button></div>`;
+    return `<div class="sub">Print ${cloneName(m.clone)} and fly to:</div>
+      <div class="row">${dests.map((id) => `<button class="btn ${id === 'derelict' ? 'primary' : ''}" data-go="launch" data-dest="${id}">${esc(chartName(id))} <small>· tier ${planetDepth(id)}</small></button>`).join('')}</div>`;
+  }
+
   private endRun(outcome: 'dead' | 'won') {
     if (!this.run) return;
-    settleRun(this.meta, this.run.codons, outcome, this.run.logs, this.run.revealed);
+    settleRun(this.meta, this.run.codons, outcome, this.run.logs, this.run.revealed, this.run.visited);
     saveMeta(this.store, this.meta);
     this.clearRun();
     this.showHub();
@@ -859,6 +867,8 @@ export class App {
     }));
     o.querySelectorAll<HTMLElement>('[data-land]').forEach((b) => b.addEventListener('click', () => {
       if (!land(r, b.dataset.land!)) return;
+      // reaching a planet unlocks it for every later print, even if this clone dies here
+      if (markLanded(this.meta, r.planet)) saveMeta(this.store, this.meta);
       this.drawX = r.x;
       this.drawY = r.y;
       this.wv.snap();

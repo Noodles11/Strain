@@ -5,7 +5,7 @@ import {
   botTurn, endTurn, flee, pickHand, playCard, startBattle, type BattleEv, type BattleState, type CardInst,
 } from './battle';
 import { ENEMIES, tierOf } from './enemies';
-import { findEvent, planet, PLANETS, type PlanetDef } from './planets';
+import { findEvent, planet, planetDepth, PLANETS, type PlanetDef } from './planets';
 import { checkChance, LOG_CODONS, LOGS, type Outcome } from './events';
 import { IMPLANT_POOL, IMPLANTS, implantMods, type ImplantMods } from './implants';
 import type { Meta } from './meta';
@@ -126,9 +126,17 @@ export interface RunState {
 
 // ---- Setup ----
 
-export function newRun(meta: Meta, seed: number): RunState {
-  const world = generateWorld(seed, 1, 'derelict');
-  return setupRun(meta, seed, world);
+/**
+ * A fresh print. It starts on the Derelict, or flies straight to any planet an earlier
+ * clone reached; the landing number (and so the tier) is that planet's depth on the chain.
+ */
+export function newRun(meta: Meta, seed: number, start = 'derelict'): RunState {
+  const dest = start !== 'derelict' && (meta.landed ?? []).includes(start) ? start : 'derelict';
+  const landing = planetDepth(dest);
+  const world = generateWorld(seed, landing, dest);
+  const r = setupRun(meta, seed, world);
+  r.landing = landing;
+  return r;
 }
 
 function setupRun(meta: Meta, seed: number, world: World): RunState {
@@ -154,7 +162,9 @@ function setupRun(meta: Meta, seed: number, world: World): RunState {
   withRng(r, (rng) => { r.expDraw = rng.shuffle(exp.map((c) => c.uid)); });
   drawExp(r, exploreHandSize(t));
   reveal(r);
-  say(r, `CLONE-${String(r.clone).padStart(4, '0')} wakes on the derelict.`);
+  say(r, world.planet === 'derelict'
+    ? `CLONE-${String(r.clone).padStart(4, '0')} wakes on the derelict.`
+    : `CLONE-${String(r.clone).padStart(4, '0')} wakes in the ship as it comes down on ${planet(world.planet).name}. Tier ${world.tier}.`);
   return r;
 }
 

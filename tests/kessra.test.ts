@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { endTurn, intentNumbers, playCard, startBattle, type CardInst } from '../src/core/battle';
-import { newMeta } from '../src/core/meta';
+import { markLanded, newMeta, settleRun } from '../src/core/meta';
 import { Rng } from '../src/core/rng';
 import { chartOptions, land, newRun } from '../src/core/run';
 import { traits } from '../src/core/traits';
@@ -119,5 +119,21 @@ describe('summoning sickness', () => {
     expect(pup.sick).toBe(true);
     endTurn(s, rng);
     expect(pup.sick).toBe(false);
+  });
+});
+
+describe('flying a new print straight to a reached planet', () => {
+  it('only planets some clone landed on are open, at their chain depth', () => {
+    const meta = newMeta();
+    expect(newRun(meta, 21, 'kessra').planet).toBe('derelict');
+    // a clone lands on Kessra and dies there: the landing still counts
+    settleRun(meta, 0, 'dead', [], [], ['derelict', 'kessra']);
+    const r = newRun(meta, 21, 'kessra');
+    expect(r.planet).toBe('kessra');
+    expect(r.world.planet).toBe('kessra');
+    expect(r.landing).toBe(2);
+    expect(r.world.tier).toBe(2);
+    expect(r.visited).toEqual(['kessra']);
+    expect(markLanded(meta, 'kessra')).toBe(false);
   });
 });

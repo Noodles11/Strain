@@ -40,6 +40,7 @@ The bot never explores for cards, so all-3 losses are expected; a player who exp
 ## S5 details
 
 - Run: Derelict (landing 1, tier 1) → star chart → Kessra (landing 2, tier 2). You can also go home from the chart and bank.
+- **Direct flights:** once any clone has landed on a planet (dying there still counts), every later print can fly straight to it from the Printer. It lands at that planet's depth on the chain (Kessra: landing 2, tier 2) with starter decks and no Derelict loot.
 - The Derelict's boss reveals Kessra for this run and for good; Kessra's boss reveals Mireth and Orun (not built yet).
 - Landing refuels: full oxygen, +30% integrity, exploration hand refilled. Decks, implants and somatic points carry over.
 - Kessra floor is one solid teal surface (no tile grid) with decorative snow drifts on about one tile in five, on the map and in battle.

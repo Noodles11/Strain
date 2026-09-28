@@ -17,6 +17,8 @@ export interface Meta {
   logs: string[];
   /** Planets revealed on the star chart. */
   planets: string[];
+  /** Planets some clone has set foot on: a new print can fly straight there. */
+  landed: string[];
 }
 
 export const META_KEY = 'strain.meta';
@@ -25,7 +27,7 @@ export const RUN_KEY = 'strain.run';
 export function newMeta(): Meta {
   return {
     v: 1, codons: 0, seq: traits(SEQUENCE_START), clone: 1, runs: 0, wins: 0, deaths: 0,
-    lastEarned: 0, lastOutcome: 'none', totalCodons: 0, logs: [], planets: ['derelict'],
+    lastEarned: 0, lastOutcome: 'none', totalCodons: 0, logs: [], planets: ['derelict'], landed: ['derelict'],
   };
 }
 
@@ -41,7 +43,8 @@ export function raise(m: Meta, t: Trait): boolean {
 }
 
 /** Bank a finished run's Codons. */
-export function settleRun(m: Meta, earned: number, outcome: 'dead' | 'won', logs: string[] = [], planets: string[] = []) {
+export function settleRun(m: Meta, earned: number, outcome: 'dead' | 'won', logs: string[] = [], planets: string[] = [], landed: string[] = []) {
+  for (const p of landed) markLanded(m, p);
   for (const p of planets) if (!m.planets.includes(p)) m.planets.push(p);
   for (const l of logs) if (!m.logs.includes(l)) m.logs.push(l);
   m.codons += earned;
@@ -52,6 +55,14 @@ export function settleRun(m: Meta, earned: number, outcome: 'dead' | 'won', logs
   m.clone += 1;
   if (outcome === 'won') m.wins += 1;
   else m.deaths += 1;
+}
+
+/** Record that a clone reached this planet; returns true if it is new. */
+export function markLanded(m: Meta, id: string): boolean {
+  if (m.landed.includes(id)) return false;
+  m.landed.push(id);
+  if (!m.planets.includes(id)) m.planets.push(id);
+  return true;
 }
 
 export function loadMeta(store: Storage | null): Meta {

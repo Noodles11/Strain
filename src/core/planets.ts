@@ -91,6 +91,16 @@ export const PLANETS: Record<string, PlanetDef> = {
   },
 };
 
+/** How many landings deep a planet sits on the reveal chain (the Derelict is 1, Kessra 2). */
+export function planetDepth(id: string): number {
+  let frontier = ['derelict'];
+  for (let d = 1; frontier.length && d < 20; d++) {
+    if (frontier.includes(id)) return d;
+    frontier = frontier.flatMap((f) => PLANETS[f]?.reveals ?? []);
+  }
+  return 1;
+}
+
 export function planet(id: string): PlanetDef {
   return PLANETS[id] ?? PLANETS.derelict;
 }
