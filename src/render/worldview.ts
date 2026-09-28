@@ -8,6 +8,8 @@ import { gateAt, idx, T_GATE, T_HAZARD, T_WALL, type Mob, type Poi } from '../wo
 
 
 export const TILES_ACROSS = 11;
+/** Tiles around the clone that are never fogged. */
+export const CLEAR_RADIUS = 2;
 
 /** Top-down, three-quarter view of a planet map. */
 export class WorldView {
@@ -177,7 +179,9 @@ export class WorldView {
         const i = idx(w, x, y);
         const wall = w.tiles[i] === T_WALL;
         const box: [number, number, number] = [this.sx(x), this.sy(y) - (wall ? lift : 0), T + (wall ? lift : 0)];
-        if (!w.seen[i]) { thin.push(box); thick.push(box); }
+        // the clone always sees clearly within 2 tiles, dark room or not
+        const near = Math.hypot(x - r.x, y - r.y) <= CLEAR_RADIUS + 0.5;
+        if (near) { /* no fog */ } else if (!w.seen[i]) { thin.push(box); thick.push(box); }
         else if (!inView(r, x, y) || isDark(r, x, y)) thin.push(box);
         if (inStorm(r, x, y)) {
           ctx.fillStyle = 'rgba(122,74,179,0.28)';
