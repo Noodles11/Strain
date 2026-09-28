@@ -81,6 +81,16 @@ Bot sim, two landings (rushes each boss, 20 seeds):
 - Hit flashes are drawn on each figure's own layer, so only the figure lights up.
 - **Summoning sickness:** anything that arrives mid-fight (a boss's summons, split Shardlings) skips its first enemy turn. Its plate reads SUMMONED until then.
 
+## Card faces
+
+- Effects are icons, not words: blade = damage, crowd = all enemies, hex = plating, cross = heal, cards = draw,
+  diamond = energy, arrow down = weak, target = expose, hook = tag, ringed cross = triage, chevrons = next card,
+  fangs = drain, helix = random trait, broken hex = shatter, drop = biomass; exploration: key, flame, radar arcs,
+  sun, pen, sealed hex, crowbar, beacon, eye.
+- Thresholds read as `MGT 9 › [icon]1`. Holding a card shows the icons with their words and every formula.
+- Printed-stock texture (dot screen, fibres, vignette); the card's plate emblem sits large and faint behind the text
+  in its trait colour, replacing the corner glyph.
+
 ## Not in this build yet
 
 - Mireth, Orun — S7.

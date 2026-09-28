@@ -68,16 +68,34 @@ button { font: inherit; color: inherit; }
 
 /* ---------- cards ---------- */
 .card {
-  position: relative; background: var(--panel2); border: 2px solid var(--dim); padding: 22px 5px 6px; min-height: 118px;
+  position: relative; overflow: hidden; isolation: isolate; border: 2px solid var(--dim); padding: 22px 5px 6px; min-height: 118px;
   display: flex; flex-direction: column; gap: 2px; cursor: pointer; transition: transform 0.12s;
+  /* printed-card texture: a fine dot screen, faint fibres and a soft vignette over the stock */
+  background:
+    radial-gradient(circle at 1px 1px, rgba(216, 207, 184, 0.07) 0.8px, transparent 1.1px) 0 0 / 4px 4px,
+    repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.018) 0 1px, transparent 1px 7px),
+    radial-gradient(ellipse at 50% 35%, #25272c 0%, #1d1f23 60%, #16181b 100%);
 }
+.card .bgart { position: absolute; z-index: -1; left: 8%; right: -18%; bottom: -6%; width: 110%; height: auto; color: var(--tint, var(--dim)); opacity: 0.2; transform: rotate(-8deg); }
+.card.big .bgart { opacity: 0.16; }
+.ic { display: inline-flex; width: 14px; height: 14px; vertical-align: -2px; margin-right: 2px; color: var(--bone); }
+.ic svg { width: 100%; height: 100%; }
+.card.big .ic { width: 17px; height: 17px; vertical-align: -3px; }
+.card .ln.fx { font-size: 15px; font-weight: 700; display: flex; align-items: center; flex-wrap: wrap; gap: 1px; }
+.card .ln.fx b { font-size: 16px; }
+.card .ln .w { font-weight: 500; margin-right: 3px; }
+.card .ln.rule { font-size: 11.5px; line-height: 1.15; color: #b9b09c; font-style: italic; }
+.card.big .ln.rule { font-size: 14px; }
+.ic-heal, .ic-triage { color: var(--toxin); }
+.ic-energy { color: var(--sodium); }
+.ic-bio { color: var(--flesh); }
+.ic-weak, .ic-expose, .ic-surge, .ic-drain { color: var(--abr); }
 .card::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 4px; background: var(--tint, var(--dim)); }
 .card .cost { position: absolute; top: 6px; left: 5px; font-family: var(--display); font-size: 20px; line-height: 1; color: var(--sodium); }
 .card .cost.o2 { color: var(--foc); }
 .card .cost.pips { display: flex; gap: 5px; top: 9px; left: 8px; }
 .card .cost.pips b { width: 9px; height: 9px; border: 2px solid var(--sodium); background: var(--sodium); transform: rotate(45deg); }
-.card .glyph { position: absolute; top: 6px; right: 6px; font-size: 16px; line-height: 1; color: var(--tint, var(--dim)); }
-.card .name { font-weight: 700; font-size: 13px; overflow-wrap: break-word; line-height: 1.05; text-transform: uppercase; letter-spacing: 0.02em; min-height: 28px; }
+.card .name { font-weight: 700; font-size: 13px; overflow-wrap: normal; word-break: normal; hyphens: manual; line-height: 1.05; text-transform: uppercase; letter-spacing: 0.02em; min-height: 28px; }
 .card .ln { font-size: 13px; line-height: 1.15; }
 .card .ln b { font-size: 15px; }
 .card .th { font-size: 11.5px; line-height: 1.1; opacity: 0.45; border-top: 1px dotted var(--line); margin-top: 2px; padding-top: 2px; }
@@ -186,3 +204,7 @@ sup { font-size: 10px; }
 .planet .row { align-items: center; justify-content: space-between; }
 .planet .row .btn { flex: none; }
 .planet.visited, .planet.lost, .planet.unknown { border-color: var(--line); opacity: 0.6; }
+
+.hand .card .name, .exp-hand .card .name { font-size: 12px; letter-spacing: 0; }
+.card .th { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; }
+.card .th .ic { width: 12px; height: 12px; }

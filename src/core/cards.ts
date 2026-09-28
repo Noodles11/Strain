@@ -136,7 +136,6 @@ export const CARDS: Record<string, CardDef> = {
   jack: {
     id: 'jack', name: 'Overclock Jack', deck: 'tac', cost: 1, glyph: '⟴',
     fx: [{ op: 'dmg', v: v(1, { rfx: 1 }) }, { op: 'empower', v: v(-1, { foc: 1 }) }],
-    rule: 'Empower: the next card you play deals that much more.',
     flavor: 'Jack in. Push the next one harder.',
   },
   siphon: {
@@ -244,7 +243,6 @@ export const CARDS: Record<string, CardDef> = {
     id: 'shatter', name: 'Shatter', deck: 'tac', cost: 2, glyph: '✧',
     fx: [{ op: 'shatter', v: v(2) }, { op: 'dmg', v: v(2) }],
     th: [{ t: 'mgt', at: 8, text: 'Plating ×3', apply: (r) => setNum(r, 'shatter', 3) }],
-    rule: 'Deal the target’s plating ×2, ignoring it, then strip it.',
     flavor: 'Armour is just glass that hasn’t broken yet.',
   },
   crystalskin: {
@@ -402,10 +400,22 @@ function setHits(r: ResolvedCard, n: number) {
 // ---- Card text ----
 
 /** A piece of card text. Numbers carry the trait that drives them and how they were made. */
+/** Icons that stand in for effect words on the card face. */
+export type IconId =
+  | 'dmg' | 'all' | 'plate' | 'heal' | 'draw' | 'energy' | 'weak' | 'expose' | 'tag' | 'triage' | 'empower'
+  | 'drain' | 'surge' | 'shatter' | 'bio' | 'key' | 'cut' | 'scan' | 'flare' | 'notes' | 'seal' | 'pry' | 'beacon' | 'stalk';
+
+/**
+ * A piece of card text. Numbers carry the trait that drives them and how they were made.
+ * A segment with an icon is shown as that icon on the card face (plus `short`, if any);
+ * the long-press view shows the icon and the words.
+ */
 export interface TextSeg {
   s: string;
   trait?: Trait;
   why?: string;
+  icon?: IconId;
+  short?: string;
 }
 
 /** Card text lines, with final numbers. `extra` adds fight bonuses to damage or plating. */
@@ -418,31 +428,32 @@ export function cardText(def: CardDef, t: Traits, opts: { donor?: boolean; dmgBo
     trait: val ? mainTrait(val) ?? undefined : undefined,
     why: val && val.w ? explainVal(val, tt) : undefined,
   });
+  const ic = (icon: IconId, s: string, short?: string): TextSeg => ({ s, icon, short });
   const src = def.fx ?? [];
   r.fx.forEach((e, i) => {
     const orig = src[i];
     const val = orig && 'v' in orig ? orig.v : undefined;
     switch (e.op) {
       case 'dmg': {
-        const segs: TextSeg[] = [{ s: 'Deal ' }, num(e.v + (opts.dmgBonus ?? 0), val)];
+        const segs: TextSeg[] = [ic('dmg', 'Deal '), num(e.v + (opts.dmgBonus ?? 0), val)];
         if ((e.hits ?? 1) > 1) segs.push({ s: ` ×${e.hits}` });
-        if (e.aoe) segs.push({ s: ' to ALL' });
+        if (e.aoe) segs.push(ic('all', ' to ALL'));
         lines.push(segs);
         break;
       }
-      case 'plate': lines.push([{ s: 'Plate ' }, num(e.v + (opts.plateBonus ?? 0), val)]); break;
-      case 'heal': lines.push([{ s: 'Heal ' }, num(e.v, val)]); break;
-      case 'draw': lines.push([{ s: 'Draw ' }, num(e.v, val)]); break;
-      case 'energy': lines.push([{ s: '+' }, num(e.v, val), { s: ' energy' }]); break;
-      case 'weak': lines.push([{ s: 'Weak ' }, num(e.v, val)]); break;
-      case 'expose': lines.push([{ s: 'Expose ' }, num(e.v, val)]); break;
-      case 'tag': lines.push([{ s: 'Tag ' }, num(e.v, val)]); break;
-      case 'triage': lines.push([{ s: 'Triage ' }, num(e.v, val)]); break;
-      case 'empower': lines.push([{ s: 'Next card +' }, num(e.v, val)]); break;
-      case 'healPerTagged': lines.push([{ s: 'Heal ' }, num(e.v, val), { s: ' per tagged enemy' }]); break;
-      case 'drain': lines.push([{ s: `Heal ${e.v}% of damage` }]); break;
-      case 'surge': lines.push([{ s: '+2 random trait this fight' }]); break;
-      case 'shatter': lines.push([{ s: `Plating ×${e.v}, then strip it` }]); break;
+      case 'plate': lines.push([ic('plate', 'Plate '), num(e.v + (opts.plateBonus ?? 0), val)]); break;
+      case 'heal': lines.push([ic('heal', 'Heal '), num(e.v, val)]); break;
+      case 'draw': lines.push([ic('draw', 'Draw '), num(e.v, val)]); break;
+      case 'energy': lines.push([ic('energy', 'Energy +', '+'), num(e.v, val)]); break;
+      case 'weak': lines.push([ic('weak', 'Weak '), num(e.v, val)]); break;
+      case 'expose': lines.push([ic('expose', 'Expose '), num(e.v, val)]); break;
+      case 'tag': lines.push([ic('tag', 'Tag '), num(e.v, val)]); break;
+      case 'triage': lines.push([ic('triage', 'Triage '), num(e.v, val)]); break;
+      case 'empower': lines.push([ic('empower', 'Next card +', '+'), num(e.v, val)]); break;
+      case 'healPerTagged': lines.push([ic('heal', 'Heal '), num(e.v, val), ic('tag', ' per tagged enemy', '/')]); break;
+      case 'drain': lines.push([ic('drain', `Heal ${e.v}% of damage dealt`, `${e.v}%`)]); break;
+      case 'surge': lines.push([ic('surge', '+2 to a random trait this fight', '+2 ?')]); break;
+      case 'shatter': lines.push([ic('shatter', `Deal plating ×${e.v}, then strip it`, `×${e.v}`)]); break;
       case 'donor': break;
       case 'cannibal': break;
     }
@@ -450,23 +461,23 @@ export function cardText(def: CardDef, t: Traits, opts: { donor?: boolean; dmgBo
   if (def.act) {
     const p = def.power ? num(r.power, def.power) : null;
     switch (def.act) {
-      case 'override': lines.push([{ s: 'Open doors ≤ ' }, p!]); break;
-      case 'cut': lines.push([{ s: 'Cut debris ≤ ' }, p!]); break;
-      case 'scan': lines.push([{ s: 'Scan radius ' }, p!]); break;
-      case 'heal': lines.push([{ s: 'Heal ' }, p!]); break;
-      case 'flare': lines.push([{ s: 'Light zone. Expose ' }, p!]); break;
-      case 'notes': lines.push([{ s: 'Reveal radius ' }, p!]); break;
-      case 'seal': lines.push([{ s: 'Hazard-proof ' }, p!, { s: ' steps' }]); break;
-      case 'pry': lines.push([{ s: r.power ? 'Open cache, +1 item' : 'Open cache' }]); break;
-      case 'beacon': lines.push([{ s: 'Plant a beacon' }]); break;
-      case 'stalk': lines.push([{ s: 'Strike first next fight' }]); break;
+      case 'override': lines.push([ic('key', 'Open doors ≤ ', '≤'), p!]); break;
+      case 'cut': lines.push([ic('cut', 'Cut debris ≤ ', '≤'), p!]); break;
+      case 'scan': lines.push([ic('scan', 'Scan radius '), p!]); break;
+      case 'heal': lines.push([ic('heal', 'Heal '), p!]); break;
+      case 'flare': lines.push([ic('flare', 'Light the zone. ')], [ic('expose', 'Expose '), p!]); break;
+      case 'notes': lines.push([ic('notes', 'Reveal radius '), p!]); break;
+      case 'seal': lines.push([ic('seal', 'Hazard-proof for '), p!, { s: ' steps', short: '' } as TextSeg]); break;
+      case 'pry': lines.push([ic('pry', r.power ? 'Open a cache, +1 item' : 'Open a cache', r.power ? '+1' : '')]); break;
+      case 'beacon': lines.push([ic('beacon', 'Plant a beacon')]); break;
+      case 'stalk': lines.push([ic('stalk', 'Strike first next fight')]); break;
     }
   }
   if (def.rule && !def.act) lines.push([{ s: def.rule }]);
   (def.th ?? []).forEach((th, i) => {
     lines.push([{ s: `${th.t.toUpperCase()} ${th.at}: ${th.text}`, trait: th.t, why: r.met[i] ? 'met' : 'unmet' }]);
   });
-  if (r.bioCost) lines.push([{ s: `Costs ${r.bioCost} biomass` }]);
+  if (r.bioCost) lines.push([ic('bio', 'Costs biomass ', '−'), { s: String(r.bioCost) }]);
   return lines;
 }
 
