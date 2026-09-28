@@ -133,7 +133,8 @@ export class BattleView {
         y = fixed.y - (ahead - 1) * H * 0.07;
         sc = ahead > 1 ? 0.7 : 1;
       }
-      const u = H * 0.34 * sc * (size < 0.8 ? 1.5 : size > 1.5 ? 0.85 : 1);
+      // true to scale: a Hull Tick stands about half as tall as a person-sized Copy
+      const u = H * 0.26 * sc * (size > 1.5 ? 0.85 : 1);
       const h0 = size * u;
       ctx.save();
       ctx.globalAlpha = show;

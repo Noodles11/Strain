@@ -84,7 +84,9 @@ Bot sim, two landings (rushes each boss, 20 seeds):
 ## Battle backdrop
 
 - The fight happens where it started: `src/render/placeview.ts` rebuilds the real map tiles around the fight in 3D
-  (walls, ceiling, lamps, props like caches, pods and terminals; crystals on Kessra), seen from behind the clone.
+  (walls, closed doors, a plain ceiling; crystals on Kessra walls), seen from behind the clone. No floor objects,
+  debris or lamps: only the clone and the enemies stand in the corridor.
+- Enemies are drawn to scale with each other: a Hull Tick is about half as tall as a person-sized Copy.
 - Entering a fight, the camera swings from the top-down map down to eye level behind the clone (1.1 s);
   the clone and enemies fade in, then the fight begins. Shown HP holds at the pre-fight values meanwhile.
 - Walls close to the camera fade out so they never block the view; far tiles sink into fog.

@@ -2,7 +2,7 @@ import { INK } from './palette';
 import { noise } from './sketch';
 import type { Theme } from './theme';
 import { isDark, inStorm, type RunState } from '../core/run';
-import { gateAt, idx, T_GATE, T_HAZARD, T_WALL, type Poi, type World } from '../world/gen';
+import { gateAt, idx, T_GATE, T_HAZARD, T_WALL, type World } from '../world/gen';
 
 /** Where a fight happens: the clone's tile and the direction it faces (toward the foe). */
 export interface FightAt {
@@ -133,22 +133,13 @@ export class PlaceView {
           continue;
         }
         floors.push({ d: c.d, draw: () => this.floor(ctx, x, y, tile === T_HAZARD ? th.hazard : null, th, t) });
-        if (this.hc < wallH) floors.push({ d: c.d, draw: () => this.ceiling(ctx, x, y, wallH, th, t) });
+        if (this.hc < wallH) floors.push({ d: c.d, draw: () => this.ceiling(ctx, x, y, wallH, th) });
         if (tile === T_GATE) {
           const g = gateAt(w, x, y)!;
-          if (!g.open) {
-            if (g.kind === 'door') solids.push({ d: c.d, draw: () => this.box(ctx, w, x, y, wallH, '#3a3226', '#5a4a33', INK.sodium, th, false) });
-            else solids.push({ d: c.d, draw: () => this.box(ctx, w, x, y, 0.45, th.debris, th.debris, INK.boneDim, th, false) });
-          }
+          // closed doors are part of the corridor; debris and floor objects stay out of the fight
+          if (g.kind === 'door' && !g.open) solids.push({ d: c.d, draw: () => this.box(ctx, w, x, y, wallH, '#3a3226', '#5a4a33', INK.sodium, th, false) });
         }
       }
-    }
-    for (const p of w.pois) {
-      if (p.hidden || (p.kind === 'nest' && p.used)) continue;
-      if (Math.abs(p.x - at.x) > reach || Math.abs(p.y - at.y) > reach) continue;
-      const c = this.project(p.x + 0.5, p.y + 0.5, 0);
-      if (!c) continue;
-      solids.push({ d: c.d - 0.01, draw: () => this.prop(ctx, p, t, th) });
     }
     floors.sort((a, b) => b.d - a.d).forEach((q) => q.draw());
     solids.sort((a, b) => b.d - a.d).forEach((q) => q.draw());
@@ -220,8 +211,8 @@ export class PlaceView {
     this.fogOver(ctx, q, d, th);
   }
 
-  /** The ceiling over open ground: dark panels, the odd lamp (a lab) or hanging crystal (a cave). */
-  private ceiling(ctx: CanvasRenderingContext2D, x: number, y: number, h: number, th: Theme, t: number) {
+  /** The ceiling over open ground: plain dark panels. */
+  private ceiling(ctx: CanvasRenderingContext2D, x: number, y: number, h: number, th: Theme) {
     const pts = [this.project(x, y, h), this.project(x + 1, y, h), this.project(x + 1, y + 1, h), this.project(x, y + 1, h)];
     if (pts.some((p) => !p)) return;
     const q = pts as { x: number; y: number; d: number }[];
@@ -231,26 +222,6 @@ export class PlaceView {
     ctx.strokeStyle = th.floor;
     ctx.lineWidth = 1;
     ctx.stroke();
-    const c = this.project(x + 0.5, y + 0.5, h);
-    if (c && (x * 7 + y * 13) % 9 === 0) {
-      const s = this.F / c.d;
-      if (th.crystals) {
-        ctx.fillStyle = th.wallEdge;
-        ctx.globalAlpha = 0.8;
-        ctx.beginPath();
-        ctx.moveTo(c.x - s * 0.08, c.y);
-        ctx.lineTo(c.x, c.y + s * 0.5);
-        ctx.lineTo(c.x + s * 0.08, c.y);
-        ctx.closePath();
-        ctx.fill();
-        ctx.globalAlpha = 1;
-      } else {
-        ctx.fillStyle = th.accent;
-        ctx.globalAlpha = 0.6 + 0.35 * Math.max(0, Math.sin(t * 1.7 + x * 3 + y));
-        ctx.fillRect(c.x - s * 0.18, c.y - s * 0.03, s * 0.36, s * 0.06);
-        ctx.globalAlpha = 1;
-      }
-    }
     this.fogOver(ctx, q, this.far(x + 0.5, y + 0.5), th);
   }
 
@@ -357,114 +328,6 @@ export class PlaceView {
       }
     }
     ctx.restore();
-  }
-
-  /** Objects on the floor, drawn as upright props facing the camera. */
-  private prop(ctx: CanvasRenderingContext2D, p: Poi, t: number, th: Theme) {
-    const g = this.project(p.x + 0.5, p.y + 0.5, 0);
-    if (!g) return;
-    const s = this.F / g.d;
-    const alpha = this.nearFade(g.d);
-    if (alpha <= 0.02) return;
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.translate(g.x, g.y);
-    ctx.lineWidth = Math.max(1, s * 0.03);
-    ctx.strokeStyle = INK.bone;
-    switch (p.kind) {
-      case 'vent': {
-        ctx.fillStyle = '#1c1e21';
-        ctx.beginPath();
-        ctx.ellipse(0, -s * 0.05, s * 0.36, s * 0.12, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-        if (!p.used) {
-          for (let k = 0; k < 3; k++) {
-            const ph = (t * 0.6 + k / 3) % 1;
-            ctx.fillStyle = `rgba(216,207,184,${0.35 * (1 - ph)})`;
-            ctx.beginPath();
-            ctx.arc(Math.sin(ph * 6 + k) * s * 0.1, -s * 0.15 - ph * s * 0.9, s * (0.1 + ph * 0.15), 0, Math.PI * 2);
-            ctx.fill();
-          }
-        }
-        break;
-      }
-      case 'cache':
-        ctx.fillStyle = p.used ? '#24262a' : INK.boneDim;
-        ctx.fillRect(-s * 0.3, -s * 0.45, s * 0.6, s * 0.45);
-        ctx.strokeRect(-s * 0.3, -s * 0.45, s * 0.6, s * 0.45);
-        if (!p.used) {
-          ctx.fillStyle = INK.sodium;
-          ctx.fillRect(-s * 0.3, -s * 0.3, s * 0.6, s * 0.06);
-        }
-        break;
-      case 'pod':
-        ctx.fillStyle = INK.cryo;
-        ctx.globalAlpha = alpha * 0.6;
-        ctx.fillRect(-s * 0.2, -s * 1.0, s * 0.4, s * 0.95);
-        ctx.globalAlpha = alpha;
-        ctx.strokeRect(-s * 0.2, -s * 1.0, s * 0.4, s * 0.95);
-        ctx.fillStyle = INK.fleshDark;
-        ctx.beginPath();
-        ctx.ellipse(0, -s * 0.55, s * 0.09, s * 0.15, 0, 0, Math.PI * 2);
-        ctx.fill();
-        break;
-      case 'terminal':
-        ctx.fillStyle = INK.hullLit;
-        ctx.fillRect(-s * 0.28, -s * 0.75, s * 0.56, s * 0.75);
-        ctx.strokeRect(-s * 0.28, -s * 0.75, s * 0.56, s * 0.75);
-        ctx.fillStyle = INK.toxin;
-        ctx.globalAlpha = alpha * (0.6 + 0.3 * Math.sin(t * 5));
-        ctx.fillRect(-s * 0.2, -s * 0.66, s * 0.4, s * 0.28);
-        break;
-      case 'surgery':
-        ctx.fillStyle = INK.boneDim;
-        ctx.fillRect(-s * 0.4, -s * 0.4, s * 0.8, s * 0.1);
-        ctx.beginPath();
-        ctx.moveTo(-s * 0.32, -s * 0.3);
-        ctx.lineTo(-s * 0.32, 0);
-        ctx.moveTo(s * 0.32, -s * 0.3);
-        ctx.lineTo(s * 0.32, 0);
-        ctx.moveTo(0, -s * 0.4);
-        ctx.lineTo(0, -s * 1.0);
-        ctx.stroke();
-        ctx.fillStyle = INK.sodium;
-        ctx.beginPath();
-        ctx.arc(0, -s * 1.0, s * 0.08, 0, Math.PI * 2);
-        ctx.fill();
-        break;
-      case 'nest':
-        ctx.fillStyle = INK.fleshDark;
-        ctx.beginPath();
-        ctx.ellipse(0, -s * 0.28, s * 0.42 * (1 + Math.sin(t * 3) * 0.05), s * 0.3, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-        break;
-      case 'event':
-        if (!p.used) {
-          ctx.fillStyle = INK.signal;
-          ctx.globalAlpha = alpha * (0.3 + 0.2 * Math.sin(t * 3));
-          ctx.beginPath();
-          ctx.ellipse(0, -s * 0.45, s * 0.35, s * 0.45, 0, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        break;
-      case 'ship': {
-        ctx.fillStyle = INK.hullLit;
-        ctx.beginPath();
-        ctx.moveTo(-s * 0.8, 0);
-        ctx.lineTo(-s * 0.5, -s * 0.7);
-        ctx.lineTo(0, -s * 1.1);
-        ctx.lineTo(s * 0.5, -s * 0.7);
-        ctx.lineTo(s * 0.8, 0);
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-        break;
-      }
-    }
-    ctx.restore();
-    void th;
   }
 }
 
