@@ -120,6 +120,20 @@ Plates read ASLEEP, FLEES IN n, BLOWS IN n and, on the last turn, the blast dama
 - Printed-stock texture (dot screen, fibres, vignette); the card's plate emblem sits large and faint behind the text
   in its trait colour, replacing the corner glyph.
 
+## Veterans and variation
+
+- The meta keeps a tally of every mob killed, by kind, across all clones (`Meta.slain`); a run adds its own kills as it goes.
+- Veterans: a kind's HP scales by `1 + 0.6·n/(n+60)` and its attack by `floor(3·n/(n+80))`, where n is that kind's tally.
+  +15% HP after 20 kills, +30% after 60, never past +60%; +1 attack from 40 kills, +2 from 160. Plates show `+n` for the attack bonus.
+- Variation: each regular mob rolls its HP when a fight starts: 15% FAINT (×0.60–0.75), 15% HULKING (×1.25–1.45),
+  the rest ×0.9–1.1. Elites vary only ±10%; bosses don't vary. The plate labels faint and hulking ones.
+
+## Empty vats
+
+- One per map in a wild or deep section, sometimes a second deeper in. Shown in cryo blue on the minimap.
+- Spend Codons on sequence levels, same price as the Printer (`6 + 3 × level`): carried Codons go first, then banked ones.
+- The level is permanent (written to the Printer at once) and applies to this clone right away (new max integrity is filled in).
+
 ## Not in this build yet
 
 - Mireth, Orun — S7.

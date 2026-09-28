@@ -11,7 +11,7 @@ import { IMPLANT_POOL, IMPLANTS, implantMods, type ImplantMods } from './implant
 import type { Meta } from './meta';
 import { Rng } from './rng';
 import {
-  addTraits, biomassYield, eatHeal, exploreHandSize, hazardDamage, maxIntegrity, maxOxygen, SOMATIC_CAP, somaticCost, TRAIT_INFO, TRAITS, traits,
+  addTraits, biomassYield, eatHeal, exploreHandSize, hazardDamage, maxIntegrity, maxOxygen, SEQUENCE_CAP, sequenceCost, SOMATIC_CAP, somaticCost, TRAIT_INFO, TRAITS, traits,
   type Trait, type Traits,
 } from './traits';
 import {
@@ -111,6 +111,14 @@ export interface RunState {
   /** Planets the Printer already knows about. */
   knownPlanets: string[];
   stats: { kills: number; fights: number; ambushed: number; steps: number };
+  /** Kills by mob kind this run; banked into the meta tally at the end. */
+  slain: Record<string, number>;
+  /** The meta tally when this print started. */
+  slainBefore: Record<string, number>;
+  /** Banked Codons (the Printer's), spendable at empty vats; written back to the meta after each use. */
+  bank: number;
+  /** Banked Codons spent at vats that the meta hasn't been charged for yet. */
+  bankSpent: number;
   msgs: string[];
   implants: string[];
   /** Somatic points bought this run (sets the pod price). */
@@ -153,7 +161,7 @@ function setupRun(meta: Meta, seed: number, world: World): RunState {
     sealSteps: 0, stalk: false, flarePower: 0, beacons: [],
     mode: 'explore', bossDead: false, landing: 1, planet: world.planet, visited: [world.planet], revealed: [],
     knownPlanets: [...(meta.planets ?? ['derelict'])],
-    stats: { kills: 0, fights: 0, ambushed: 0, steps: 0 }, msgs: [],
+    stats: { kills: 0, fights: 0, ambushed: 0, steps: 0 }, msgs: [], slain: {}, slainBefore: { ...(meta.slain ?? {}) }, bank: meta.codons, bankSpent: 0,
     implants: [], somaticBought: 0, excised: 0, logs: [], knownLogs: [...(meta.logs ?? [])],
   };
   const t = runTraits(r);
@@ -181,6 +189,10 @@ export function migrateRun(r: RunState): RunState {
   r.revealed ??= [];
   r.knownPlanets ??= ['derelict'];
   r.stats.steps ??= r.steps;
+  r.slain ??= {};
+  r.slainBefore ??= {};
+  r.bank ??= 0;
+  r.bankSpent ??= 0;
   return r;
 }
 
@@ -634,7 +646,10 @@ function startFight(r: RunState, foes: string[], tier: number, ctx: FightCtx, am
   const t = runTraits(r);
   const tr = tierOf(tier);
   const m = mods(r);
+  const slain: Record<string, number> = { ...r.slainBefore };
+  for (const [id, n] of Object.entries(r.slain)) slain[id] = (slain[id] ?? 0) + n;
   const out = withRng(r, (rng) => startBattle({
+    slain, vary: true,
     foes, tier, deck: r.tac, traits: t, hp: r.hp, maxHp: maxHp(r), biomass: r.biomass,
     consumedRun: r.consumedRun, ambush, firstStrike, exposeStart: expose, plateStart: m.plateHde ? t.hde : 0,
     mods: { firstCardFree: m.firstCardFree, thorns: m.thorns, tagStart: m.tagStart, energyFirst: m.energyFirst, drawFirst: m.drawFirst, fleeBonus: m.fleeBonus, resonance: here(r).twist === 'resonance' },
@@ -718,6 +733,7 @@ function afterBattleOp(r: RunState) {
   const killed = b.foes.filter((f) => !f.fled);
   const kills = killed.length;
   r.stats.kills += kills;
+  for (const f of killed) r.slain[f.id] = (r.slain[f.id] ?? 0) + 1;
   let mult = ctx.reward ? 1 : 0.5;
   if (ctx.ambush) mult *= 1.5;
   r.loot = killed.map((f) => ({ id: f.id, tagged: f.tag > 0, mult }));
@@ -872,6 +888,7 @@ export function describeAt(r: RunState, x: number, y: number): { title: string; 
     case 'ship': return { title: 'Your ship', text: r.bossDead ? 'Ready to launch.' : 'Oxygen and exploration hand refill here.' };
     case 'pod': return { title: 'Splice pod', text: `Pour biomass in to push this body past its sequence. +1 to a trait for this run (max +${SOMATIC_CAP} each). ${SITE_BUYS - (p.buys ?? 0)} splice${SITE_BUYS - (p.buys ?? 0) === 1 ? '' : 's'} left in it.` };
     case 'terminal': return { title: 'Printer terminal', text: `It still prints techniques. ${TERMINAL_PRICE} biomass each, ${SITE_BUYS - (p.buys ?? 0)} left.` };
+    case 'vat': return { title: 'Empty vat', text: `A print vat, drained but still wired to the sequencer. Spend Codons, carried first, then banked, to raise a trait for good: this clone and every print after it.` };
     case 'surgery': return { title: 'Surgery bay', text: `Cut a card out of a deck for good. ${exciseCost(r)} biomass.` };
     case 'event': {
       const ev = findEvent(p.event)!;
@@ -933,6 +950,14 @@ export function actionsAt(r: RunState, x: number, y: number): Action[] {
       out.push({ id: `buy:${i}`, label: CARDS[id].name, detail: `${deck === 'tac' ? 'tactical' : 'exploration'} · ${TERMINAL_PRICE} biomass`, ok: near && (p.buys ?? 0) < SITE_BUYS && r.biomass >= TERMINAL_PRICE, card: id });
     });
   }
+  if (p.kind === 'vat') {
+    for (const k of TRAITS) {
+      const lv = r.seq[k];
+      const cost = sequenceCost(lv);
+      const capped = lv >= SEQUENCE_CAP;
+      out.push({ id: `seq:${k}`, label: `Sequence ${TRAIT_INFO[k].name} ${lv} → ${lv + 1}`, detail: capped ? 'at the cap' : `${cost} Codons`, ok: near && !capped && r.codons + r.bank >= cost });
+    }
+  }
   if (p.kind === 'surgery') {
     out.push({ id: 'surgery', label: 'Lie down', detail: `${exciseCost(r)} biomass per cut`, ok: near && r.biomass >= exciseCost(r) });
   }
@@ -963,6 +988,7 @@ export function doAction(r: RunState, x: number, y: number, id: string): boolean
     reveal(r);
     return true;
   }
+  if (p && id.startsWith('seq:')) { vatSequence(r, id.slice(4) as Trait); return true; }
   if (p && id.startsWith('splice:')) { splice(r, p, id.slice(7) as Trait); return true; }
   if (p && id.startsWith('buy:')) { terminalBuy(r, p, Number(id.slice(4))); return true; }
   if (p && id.startsWith('ev:')) { eventChoose(r, p, Number(id.slice(3))); return true; }
@@ -999,6 +1025,20 @@ function openCache(r: RunState, p: Poi, extra: boolean) {
 }
 
 // ---- Upgrade sites ----
+
+/** Empty vat: a permanent sequence level, paid from Codons carried first, then the bank. */
+function vatSequence(r: RunState, k: Trait) {
+  const cost = sequenceCost(r.seq[k]);
+  const before = maxHp(r);
+  const fromRun = Math.min(r.codons, cost);
+  r.codons -= fromRun;
+  r.bank -= cost - fromRun;
+  r.bankSpent += cost - fromRun;
+  r.seq[k] += 1;
+  r.hp += Math.max(0, maxHp(r) - before);
+  r.oxygen = Math.min(maxO2(r), r.oxygen);
+  say(r, `The vat hums. ${TRAIT_INFO[k].name} ${r.seq[k]}, for good.`);
+}
 
 function splice(r: RunState, p: Poi, k: Trait) {
   const before = maxHp(r);

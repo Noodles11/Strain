@@ -244,6 +244,26 @@ export const TIERS: Record<number, Tier> = {
   5: { bonus: 8, hp: 3.5 },
 };
 
+/**
+ * Veterans: every kind of mob toughens as clones kill more of it, over all runs.
+ * The curve is slow and levels off: +15% HP after 20 kills, +30% after 60, never past +60%;
+ * +1 attack from 40 kills, +2 from 160.
+ */
+export function veteran(slain: number): { hp: number; atk: number } {
+  const n = Math.max(0, slain);
+  return { hp: 1 + (0.6 * n) / (n + 60), atk: Math.floor((3 * n) / (n + 80) + 1e-9) };
+}
+
+/** Individual variation: most mobs are near the norm, some are faint, some hulking. */
+export type FoeForm = 'faint' | 'hulking';
+
+export function rollForm(roll: number, spread: number, elite: boolean): { mul: number; form?: FoeForm } {
+  if (elite) return { mul: 0.9 + spread * 0.2 };
+  if (roll < 0.15) return { mul: 0.6 + spread * 0.15, form: 'faint' };
+  if (roll > 0.85) return { mul: 1.25 + spread * 0.2, form: 'hulking' };
+  return { mul: 0.9 + spread * 0.2 };
+}
+
 export function tierOf(n: number): Tier {
   return TIERS[Math.max(1, Math.min(5, n))];
 }

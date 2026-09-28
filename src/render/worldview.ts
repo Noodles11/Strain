@@ -371,6 +371,30 @@ export class WorldView {
         ctx.fillRect(cx - T * 0.26, fy - T * 1.02, T * 0.52, T * 0.1);
         break;
       }
+      case 'vat': {
+        // a wide print vat, drained: cracked glass, a dark residue line, cables to the floor
+        ctx.fillStyle = '#1c1e21';
+        ctx.fillRect(cx - T * 0.38, fy - T * 0.14, T * 0.76, T * 0.14);
+        ctx.fillStyle = '#26343a';
+        ctx.fillRect(cx - T * 0.3, fy - T * 0.9, T * 0.6, T * 0.76);
+        ctx.strokeStyle = INK.boneDim;
+        ctx.strokeRect(cx - T * 0.3, fy - T * 0.9, T * 0.6, T * 0.76);
+        ctx.fillStyle = INK.fleshDark;
+        ctx.fillRect(cx - T * 0.28, fy - T * 0.24, T * 0.56, T * 0.08);
+        ctx.strokeStyle = INK.bone;
+        ctx.beginPath();
+        ctx.moveTo(cx + T * 0.08, fy - T * 0.9);
+        ctx.lineTo(cx - T * 0.02, fy - T * 0.66);
+        ctx.lineTo(cx + T * 0.1, fy - T * 0.5);
+        ctx.stroke();
+        ctx.fillStyle = INK.sodium;
+        ctx.globalAlpha = 0.5 + 0.4 * Math.sin(t * 2.5 + p.id);
+        ctx.fillRect(cx - T * 0.05, fy - T * 1.0, T * 0.1, T * 0.06);
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = INK.hullLit;
+        ctx.fillRect(cx - T * 0.34, fy - T * 0.97, T * 0.68, T * 0.08);
+        break;
+      }
       case 'terminal': {
         ctx.fillStyle = INK.hullLit;
         ctx.fillRect(cx - T * 0.3, fy - T * 0.75, T * 0.6, T * 0.72);

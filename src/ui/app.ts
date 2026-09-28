@@ -219,9 +219,21 @@ export class App {
       <div class="row">${dests.map((id) => `<button class="btn ${id === 'derelict' ? 'primary' : ''}" data-go="launch" data-dest="${id}">${esc(chartName(id))} <small>· tier ${planetDepth(id)}</small></button>`).join('')}</div>`;
   }
 
+  /** A vat purchase is permanent at once: write the sequence and the bank back to the meta. */
+  private syncBank() {
+    const r = this.run;
+    if (!r) return;
+    this.meta.codons = Math.max(0, this.meta.codons - r.bankSpent);
+    r.bankSpent = 0;
+    r.bank = this.meta.codons;
+    for (const k of TRAITS) this.meta.seq[k] = Math.max(this.meta.seq[k], r.seq[k]);
+    saveMeta(this.store, this.meta);
+  }
+
   private endRun(outcome: 'dead' | 'won') {
     if (!this.run) return;
-    settleRun(this.meta, this.run.codons, outcome, this.run.logs, this.run.revealed, this.run.visited);
+    this.syncBank();
+    settleRun(this.meta, this.run.codons, outcome, this.run.logs, this.run.revealed, this.run.visited, this.run.slain);
     saveMeta(this.store, this.meta);
     this.clearRun();
     this.showHub();
@@ -230,6 +242,8 @@ export class App {
   // ---------------------------------------------------------------- run layout
 
   private enterRun() {
+    // the Printer may have spent banked Codons since this print left
+    this.run!.bank = this.meta.codons;
     this.layout = '';
     this.sheet = null;
     this.lines = [];
@@ -711,7 +725,7 @@ export class App {
         ].filter(Boolean);
         return `<div class="unit ${gone ? 'gone' : ''}" data-f="${f.uid}">
           <div class="plate ${f.uid === tgt && aliveFoes(b).length > 1 ? 'tgt' : ''}">
-          <div class="top"><span class="nm">${def.rank === 'boss' ? '☠ ' : def.rank === 'elite' ? '✦ ' : ''}${esc(def.name)}</span><span class="hpn">${hp}<small>/${f.maxHp}</small></span></div>
+          <div class="top"><span class="nm">${def.rank === 'boss' ? '☠ ' : def.rank === 'elite' ? '✦ ' : ''}${f.form === 'faint' ? '<i class="form faint">FAINT</i> ' : f.form === 'hulking' ? '<i class="form hulk">HULKING</i> ' : ''}${esc(def.name)}${f.vet ? `<i class="form vet" title="Veteran: +${f.vet} attack">+${f.vet}</i>` : ''}</span><span class="hpn">${hp}<small>/${f.maxHp}</small></span></div>
           ${this.bar(hp, f.maxHp)}<div class="row2"><span class="intent">${intent || '&nbsp;'}</span></div></div>
           ${tabs.length ? `<div class="tab">${tabs.map((x) => `<span>${x}</span>`).join('')}</div>` : ''}</div>`;
       }).join('');
@@ -851,9 +865,10 @@ export class App {
       if (s?.kind !== 'action') return;
       if (b.dataset.act === 'surgery') { this.sheet = { kind: 'surgery', tab: 'tac' }; this.refresh(); return; }
       const id = b.dataset.act!;
-      const keep = id.startsWith('splice:') || id.startsWith('buy:');
+      const keep = id.startsWith('splice:') || id.startsWith('buy:') || id.startsWith('seq:');
       this.sheet = keep ? s : null;
       doAction(r, s.x, s.y, id);
+      if (id.startsWith('seq:')) this.syncBank();
       if (r.mode === 'battle') { this.afterAction(); return; }
       this.saveRun();
       this.refresh();
@@ -922,7 +937,7 @@ export class App {
         const cards = acts.filter((a) => a.card);
         const plain = acts.filter((a) => !a.card);
         const grid = cards.length ? `<div class="cards3">${cards.map((a) => `<div data-act="${a.id}" class="${a.ok ? '' : 'nobuy'}">${cardHtml(a.card!, t, { off: !a.ok })}<div class="why">${esc(a.detail)}</div></div>`).join('')}</div>` : '';
-        return wrap(`<h2>${esc(d.title)}</h2><p>${esc(d.text)}</p><p class="why">◆ ${r.biomass} biomass</p>${grid}<div class="acts">${plain.map((a) => `<button class="btn act" data-act="${a.id}" ${a.ok ? '' : 'disabled'}>${esc(a.label)} <small>${esc(a.detail)}</small></button>`).join('') || (grid ? '' : '<p>Nothing to do here.</p>')}</div>`);
+        return wrap(`<h2>${esc(d.title)}</h2><p>${esc(d.text)}</p><p class="why">${acts.some((q) => q.id.startsWith('seq:')) ? `${r.codons + r.bank} Codons (${r.codons} on you + ${r.bank} banked)` : `◆ ${r.biomass} biomass`}</p>${grid}<div class="acts">${plain.map((a) => `<button class="btn act" data-act="${a.id}" ${a.ok ? '' : 'disabled'}>${esc(a.label)} <small>${esc(a.detail)}</small></button>`).join('') || (grid ? '' : '<p>Nothing to do here.</p>')}</div>`);
       }
       case 'map': {
         const pts = travelPoints(r).map((p) => `<button class="btn small" data-travel="${p.x},${p.y}">${esc(p.label)}</button>`).join('');
@@ -979,7 +994,7 @@ export class App {
       if (p.kind === 'vent' && !p.used) dot(p.x, p.y, INK.bone);
       if (p.kind === 'cache' && !p.used) dot(p.x, p.y, INK.boneDim);
       if (p.kind === 'nest' && !p.used) dot(p.x, p.y, INK.flesh);
-      if (p.kind === 'pod' || p.kind === 'terminal' || p.kind === 'surgery') dot(p.x, p.y, INK.cryo, 1);
+      if (p.kind === 'pod' || p.kind === 'terminal' || p.kind === 'surgery' || p.kind === 'vat') dot(p.x, p.y, INK.cryo, 1);
       if (p.kind === 'event' && !p.used) dot(p.x, p.y, INK.signal, 1);
     }
     for (const m of w.mobs) if (m.alive && (m.kind === 'boss' || m.kind === 'elite') && w.seen[idx(w, m.x, m.y)]) dot(m.x, m.y, m.kind === 'boss' ? INK.flesh : INK.signal, 2);

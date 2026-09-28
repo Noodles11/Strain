@@ -31,7 +31,7 @@ export interface Gate {
   b: number;
 }
 
-export type PoiKind = 'ship' | 'cache' | 'vent' | 'nest' | 'pod' | 'terminal' | 'surgery' | 'event';
+export type PoiKind = 'ship' | 'cache' | 'vent' | 'nest' | 'pod' | 'terminal' | 'surgery' | 'event' | 'vat';
 
 /** Upgrade sites: spend biomass on the body or the decks. */
 export const SITE_KINDS: PoiKind[] = ['pod', 'terminal', 'surgery'];
@@ -414,6 +414,14 @@ function tryGenerate(seed: number, tier: number, planet: string): World | null {
     if (world.pois.some((p) => p.kind === kind)) continue;
     const z = rng.pick(siteZones.filter((q) => q.ring !== 'safe').length ? siteZones.filter((q) => q.ring !== 'safe') : siteZones);
     addPoi(kind, z.id, spot(z.id));
+  }
+  // empty vats: one per map away from the ship, sometimes a second deeper in
+  const vatZones = siteZones.filter((q) => q.ring === 'wild' || q.ring === 'deep');
+  if (vatZones.length) {
+    const vz = rng.pick(vatZones).id;
+    addPoi('vat', vz, spot(vz));
+    const deepV = vatZones.filter((q) => q.ring === 'deep');
+    if (deepV.length && rng.next() < 0.4) { const dz = rng.pick(deepV).id; addPoi('vat', dz, spot(dz)); }
   }
   for (const p of world.pois) {
     if (p.kind === 'pod') p.offer = rng.sample(['mgt', 'hde', 'rfx', 'foc', 'met', 'abr'], 2);

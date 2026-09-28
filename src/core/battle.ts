@@ -1,5 +1,5 @@
 import { CARDS, hasKeyword, resolveCard, type CardDef, type Effect, type ResolvedCard } from './cards';
-import { ENEMIES, type EnemyDef, type Intent } from './enemies';
+import { ENEMIES, rollForm, veteran, type EnemyDef, type FoeForm, type Intent } from './enemies';
 import type { Rng } from './rng';
 import { addTraits, energyPerTurn, handSize, TRAITS, traits, type Trait, type Traits } from './traits';
 
@@ -41,6 +41,10 @@ export interface Foe {
   slept?: number;
   /** Incinerator: heat so far. */
   heat?: number;
+  /** Veteran attack bonus from clones' past kills of this kind. */
+  vet?: number;
+  /** A faint or hulking specimen (HP rolled low or high). */
+  form?: FoeForm;
 }
 
 export interface BattlePlayer {
@@ -136,6 +140,10 @@ export interface BattleSetup {
   firstStrike?: boolean;
   exposeStart?: number;
   plateStart?: number;
+  /** Kills of each mob kind so far (all runs): veterans get more HP and attack. */
+  slain?: Record<string, number>;
+  /** Roll each regular foe's HP: faint, normal or hulking. */
+  vary?: boolean;
 }
 
 const NAME = (f: Foe) => ENEMIES[f.id].name.toUpperCase();
@@ -159,6 +167,17 @@ export function startBattle(setup: BattleSetup, rng: Rng, tierBonus: number, hpM
   const foes = setup.foes.map((id) => {
     const f = makeFoe(id, tierBonus, uid++, hpMul);
     f.expose = setup.exposeStart ?? 0;
+    if (setup.slain || setup.vary) {
+      const v = veteran(setup.slain?.[id] ?? 0);
+      let mul = v.hp;
+      if (setup.vary && ENEMIES[id].rank !== 'boss') {
+        const rolled = rollForm(rng.next(), rng.next(), ENEMIES[id].rank === 'elite');
+        mul *= rolled.mul;
+        if (rolled.form) f.form = rolled.form;
+      }
+      f.maxHp = f.hp = Math.max(1, Math.round(f.hp * mul));
+      if (v.atk) f.vet = v.atk;
+    }
     return f;
   });
   const s: BattleState = {
@@ -589,7 +608,7 @@ export function intentNumbers(s: BattleState, f: Foe): { attack: number; hits: n
   const it = currentIntent(f, s);
   let attack = 0;
   if (it.attack !== undefined) {
-    attack = it.attack + def.might + f.tier + f.strength;
+    attack = it.attack + def.might + f.tier + f.strength + (f.vet ?? 0);
     if (f.weak > 0) attack = Math.floor(attack * 0.75);
     if (s.player.expose > 0) attack = Math.floor(attack * 1.5);
   }

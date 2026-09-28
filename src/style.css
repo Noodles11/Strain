@@ -226,3 +226,7 @@ sup { font-size: 10px; }
 .hand .card .name, .exp-hand .card .name { font-size: 12px; letter-spacing: 0; }
 .card .th { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; }
 .card .th .ic { width: 12px; height: 12px; }
+.plate .nm .form { font-style: normal; font-size: 10px; letter-spacing: 0.06em; padding: 0 3px; border-radius: 2px; vertical-align: 1px; }
+.plate .nm .form.faint { color: #9aa3a8; border: 1px solid #5b6368; }
+.plate .nm .form.hulk { color: #1a1206; background: #e3a33b; }
+.plate .nm .form.vet { color: #e38b6b; margin-left: 4px; }
