@@ -27,9 +27,11 @@ export function cardHtml(id: string, t: Traits, o: CardOpts = {}): string {
   const kws = (def.keywords ?? []).filter((k) => k !== 'fleeting').map((k) => k).join(' · ');
   const cls = ['card', tint ? `t-${tint}` : '', o.off ? 'off' : '', o.big ? 'big' : '', def.medic ? 'medic' : '', o.fleeting ? 'fleeting' : '', o.extraClass ?? ''].join(' ');
   // tactical costs use the same diamonds as the energy bar; exploration costs are oxygen
-  const cost = def.deck === 'exp' ? `<div class="cost o2">${r.cost}</div>`
-    : r.cost > 0 ? `<div class="cost pips" title="${r.cost} energy">${'<b></b>'.repeat(r.cost)}</div>` : '';
-  return `<div class="${cls}">${cardEmblem(id)}${cost}<div class="name">${esc(def.name)}${o.donor ? ' ⊕' : ''}</div>${body}${kws ? `<div class="kw">${esc(kws)}</div>` : ''}</div>`;
+  // costs are drawn as the same pips as the resource they spend: energy diamonds, oxygen cells
+  const cost = r.cost <= 0 ? ''
+    : def.deck === 'exp' ? `<div class="cost o2pips" title="${r.cost} oxygen">${'<b></b>'.repeat(r.cost)}</div>`
+      : `<div class="cost pips" title="${r.cost} energy">${'<b></b>'.repeat(r.cost)}</div>`;
+  return `<div class="${cls}" data-id="${id}"${o.donor ? ' data-donor="1"' : ''}>${cardEmblem(id)}${cost}<div class="name">${esc(def.name)}${o.donor ? ' ⊕' : ''}</div>${body}${kws ? `<div class="kw">${esc(kws)}</div>` : ''}</div>`;
 }
 
 /** One line of card text. On the card face, effect words become icons; the big view keeps the words too. */

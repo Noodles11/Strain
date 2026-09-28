@@ -25,7 +25,6 @@ import { icon } from './icons';
 
 type Sheet =
   | { kind: 'action'; x: number; y: number }
-  | { kind: 'card'; id: string; donor?: boolean }
   | { kind: 'map' }
   | { kind: 'deck'; tab: 'tac' | 'exp' }
   | { kind: 'menu' }
@@ -85,6 +84,7 @@ export class App {
 
   constructor(private root: HTMLElement) {
     this.meta = loadMeta(this.store);
+    this.bindLongPress();
     try { this.printOn = this.store?.getItem('strain.print') !== 'off'; } catch { /* default on */ }
     try {
       const raw = this.store?.getItem(RUN_KEY);
@@ -97,6 +97,43 @@ export class App {
     window.addEventListener('resize', () => this.resize());
     window.addEventListener('keydown', (e) => this.key(e));
     requestAnimationFrame((t) => this.frame(t));
+  }
+
+  // ---------------------------------------------------------------- card details
+
+  /** Holding any card anywhere (hands, deck, rewards, terminals, surgery) opens its details on top of everything. */
+  private bindLongPress() {
+    let timer = 0;
+    let start: { x: number; y: number } | null = null;
+    const cancel = () => { clearTimeout(timer); start = null; };
+    this.root.addEventListener('pointerdown', (e) => {
+      const el = (e.target as HTMLElement).closest<HTMLElement>('.card[data-id]');
+      if (!el || el.closest('.detail-layer')) return;
+      start = { x: e.clientX, y: e.clientY };
+      timer = window.setTimeout(() => {
+        longPressed = true;
+        window.setTimeout(() => { longPressed = false; }, 600);
+        this.showDetail(el.dataset.id!, el.dataset.donor === '1');
+      }, 450);
+    });
+    this.root.addEventListener('pointermove', (e) => { if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 12) cancel(); });
+    this.root.addEventListener('pointerup', cancel);
+    this.root.addEventListener('pointercancel', cancel);
+    // the release of a long press must not pick a reward, buy a card or cut one
+    this.root.addEventListener('click', (e) => { if (longPressed) { e.stopPropagation(); e.preventDefault(); } }, true);
+    this.root.addEventListener('contextmenu', (e) => { if ((e.target as HTMLElement).closest('.card')) e.preventDefault(); });
+  }
+
+  private showDetail(id: string, donor: boolean) {
+    this.root.querySelector('.detail-layer')?.remove();
+    const t = this.run ? runTraits(this.run) : this.meta.seq;
+    const layer = document.createElement('div');
+    layer.className = 'detail-layer sheet-wrap';
+    layer.innerHTML = `<div class="sheet frame">${cardDetail(id, t, donor)}<button class="btn" data-close>Close</button></div>`;
+    layer.addEventListener('click', (e) => {
+      if (e.target === layer || (e.target as HTMLElement).closest('[data-close]')) layer.remove();
+    });
+    this.root.appendChild(layer);
   }
 
   // ---------------------------------------------------------------- save
@@ -585,7 +622,7 @@ export class App {
       const u = Number(el.dataset.u);
       el.style.flex = '1';
       el.style.minWidth = '0';
-      press(el, () => this.tapExp(u), () => { this.sheet = { kind: 'card', id: expCard(r, u)!.id }; this.refresh(); });
+      press(el, () => this.tapExp(u));
     });
   }
 
@@ -683,8 +720,7 @@ export class App {
       }).join('');
       hand.querySelectorAll<HTMLElement>('[data-c]').forEach((el) => {
         const uid = Number(el.dataset.c);
-        const c = b.hand.find((q) => q.uid === uid)!;
-        press(el, () => this.tapCard(uid), () => { this.sheet = { kind: 'card', id: c.id, donor: c.donor }; this.refresh(); });
+        press(el, () => this.tapCard(uid));
       });
     }
     const en = this.root.querySelector('.energy');
@@ -838,7 +874,6 @@ export class App {
     const t = runTraits(r);
     const wrap = (inner: string) => `<div class="sheet-wrap"><div class="sheet frame">${inner}<button class="btn" data-o="close">Close</button></div></div>`;
     switch (s.kind) {
-      case 'card': return wrap(cardDetail(s.id, t, s.donor));
       case 'action': {
         const d = describeAt(r, s.x, s.y);
         const acts = actionsAt(r, s.x, s.y);
@@ -913,21 +948,15 @@ export class App {
   }
 }
 
-/** Tap, or hold for details. */
-function press(el: HTMLElement, tap: () => void, hold: () => void) {
-  let timer = 0;
-  let held = false;
+/** Set while a long press is being released, so that release doesn't also count as a tap. */
+let longPressed = false;
+
+/** Tap handler that ignores the release of a long press (long presses open card details, see App). */
+function press(el: HTMLElement, tap: () => void) {
   let start: { x: number; y: number } | null = null;
-  el.addEventListener('pointerdown', (e) => {
-    held = false;
-    start = { x: e.clientX, y: e.clientY };
-    timer = window.setTimeout(() => { held = true; hold(); }, 420);
-  });
+  el.addEventListener('pointerdown', (e) => { start = { x: e.clientX, y: e.clientY }; });
   el.addEventListener('pointerup', (e) => {
-    clearTimeout(timer);
-    if (!held && start && Math.hypot(e.clientX - start.x, e.clientY - start.y) < 14) tap();
+    if (!longPressed && start && Math.hypot(e.clientX - start.x, e.clientY - start.y) < 14) tap();
     start = null;
   });
-  el.addEventListener('pointerleave', () => clearTimeout(timer));
-  el.addEventListener('contextmenu', (e) => e.preventDefault());
 }

@@ -94,6 +94,10 @@ button { font: inherit; color: inherit; }
 .card .cost { position: absolute; top: 6px; left: 5px; font-family: var(--display); font-size: 20px; line-height: 1; color: var(--sodium); }
 .card .cost.o2 { color: var(--foc); }
 .card .cost.pips { display: flex; gap: 5px; top: 9px; left: 8px; }
+.card .cost.o2pips { display: flex; gap: 3px; top: 8px; left: 7px; }
+.card .cost.o2pips b { width: 7px; height: 12px; border: 1.5px solid var(--foc); background: var(--foc); }
+.card { -webkit-touch-callout: none; }
+.detail-layer { z-index: 40; }
 .card .cost.pips b { width: 9px; height: 9px; border: 2px solid var(--sodium); background: var(--sodium); transform: rotate(45deg); }
 .card .name { font-weight: 700; font-size: 13px; overflow-wrap: normal; word-break: normal; hyphens: manual; line-height: 1.05; text-transform: uppercase; letter-spacing: 0.02em; min-height: 28px; }
 .card .ln { font-size: 13px; line-height: 1.15; }
