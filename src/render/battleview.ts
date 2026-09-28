@@ -4,6 +4,7 @@ import { INK } from './palette';
 import type { BattleState } from '../core/battle';
 import type { Traits } from '../core/traits';
 import { theme, type Theme } from './theme';
+import { cardFx, enemyFx, FxLayer, type Anchor } from './attackfx';
 
 export interface FoeAnim {
   flash: number;
@@ -12,7 +13,7 @@ export interface FoeAnim {
   gone: boolean;
 }
 
-/** Game Boy battle grammar: foe upper right on a ledge, clone lower left seen from behind. */
+/** Game Boy battle grammar: foe far right, clone near left seen from behind, both on one floor. */
 export class BattleView {
   foes = new Map<number, FoeAnim>();
   player = { flash: 0, lunge: 0, heal: 0 };
@@ -20,6 +21,12 @@ export class BattleView {
   intro = 0;
   target = -1;
   hit: { uid: number; x: number; y: number; w: number; h: number }[] = [];
+  fx = new FxLayer();
+  private now = 0;
+  private anchors = new Map<number, Anchor>();
+  private me: Anchor = { x: 0, y: 0, h: 1 };
+  /** Where the clone's attacks leave from: its right shoulder. */
+  private hand: Anchor = { x: 0, y: 0, h: 1 };
 
   reset() {
     this.foes.clear();
@@ -27,6 +34,24 @@ export class BattleView {
     this.shake = 0;
     this.intro = 0;
     this.target = -1;
+    this.fx.clear();
+  }
+
+  /** Animate a played card; returns how long to wait before its hit lands (ms). */
+  playCard(id: string, target: number | undefined, hits: number) {
+    const kind = cardFx(id);
+    const self = kind === 'shield' || kind === 'heal' || kind === 'spark' || kind === 'swirl';
+    const to = self ? [this.me] : kind === 'pellets' ? [...this.anchors.values()] : [this.anchors.get(target ?? -1) ?? [...this.anchors.values()][0]].filter(Boolean) as Anchor[];
+    if (to.length) this.fx.add(kind, this.now, this.hand, to, hits);
+    return kind;
+  }
+
+  /** Animate an enemy attack on the clone. */
+  strike(uid: number, id: string, hits: number) {
+    const kind = enemyFx(id);
+    const from = this.anchors.get(uid);
+    if (from) this.fx.add(kind, this.now, { ...from, y: from.y - from.h * 0.15 }, [this.me], hits);
+    return kind;
   }
 
   anim(uid: number): FoeAnim {
@@ -50,6 +75,7 @@ export class BattleView {
 
   draw(ctx: CanvasRenderingContext2D, b: BattleState, traits: Traits, W: number, H: number, t: number, planet = 'derelict') {
     const th = theme(planet);
+    this.now = t;
     ctx.save();
     if (this.shake > 0) ctx.translate(Math.sin(t * 90) * this.shake * 8, Math.cos(t * 70) * this.shake * 4);
     this.drawBackdrop(ctx, W, H, t, th);
@@ -57,33 +83,38 @@ export class BattleView {
     const ease = (x: number) => 1 - (1 - x) ** 3;
     const k = ease(this.intro);
 
-    // foe ledge
-    const ex = W * 0.7 + (1 - k) * W * 0.6;
-    const ey = H * 0.46;
-    this.ledge(ctx, ex, ey, W * 0.3, H * 0.055, th);
-    // clone ledge
-    const px = W * 0.27 - (1 - k) * W * 0.6;
-    const py = H * 0.95;
-    this.ledge(ctx, px, py, W * 0.3, H * 0.06, th);
+    // both stand on the same floor: the foe further back, the clone close to us
+    const ex = W * 0.71 + (1 - k) * W * 0.6;
+    const ey = H * 0.63;
+    const px = W * 0.24 - (1 - k) * W * 0.6;
+    const py = H * 1.07;
 
     const shown = b.foes.filter((f) => f.alive || !this.anim(f.uid).gone);
     const alive = b.foes.filter((f) => f.alive);
     const front = alive.find((f) => f.uid === this.target) ?? alive[0] ?? shown[0];
     const back = shown.filter((f) => f !== front);
-    const slots: [number, number, number][] = [[-0.2, -0.06, 0.7], [0.17, -0.1, 0.7]];
+    // further away = higher on the floor and smaller
+    const slots: [number, number, number][] = [[-0.22, -0.05, 0.74], [0.16, -0.08, 0.66]];
     this.hit = [];
+    this.anchors.clear();
     const drawFoe = (f: (typeof shown)[number], dx: number, dy: number, sc: number) => {
       const a = this.anim(f.uid);
       const size = CREATURE_SIZE[f.id] ?? 1;
       const u = H * 0.34 * sc * (size < 0.8 ? 1.5 : size > 1.5 ? 0.85 : 1);
       const x = ex + dx * W;
       const y = ey + dy * H;
+      const h0 = size * u;
+      this.shadow(ctx, x, y, u * 0.55, a.dead);
+      if (f.alive) this.anchors.set(f.uid, { x: x - a.lunge * W * 0.06, y: y - h0 * 0.5, h: Math.max(h0, H * 0.18) });
       const blink = a.flash > 0 && Math.floor(a.flash * 12) % 2 === 0;
       if (a.dead > 0) ctx.globalAlpha = 1 - a.dead;
       if (!blink) {
-        drawCreature(ctx, f.id, x - a.lunge * W * 0.06, y + a.lunge * H * 0.03, u, {
+        // drawn on its own layer so hit flashes tint only the creature, not the scene behind it
+        const lx = x - a.lunge * W * 0.06;
+        const ly = y + a.lunge * H * 0.03;
+        this.sprite(ctx, lx - u * 2, ly - u * 2.3, u * 4, u * 2.6, (c) => drawCreature(c, f.id, lx, ly, u, {
           t: t + f.uid, boil: Math.floor(t * 8) * 3, flash: a.flash, lunge: a.lunge, dead: a.dead, seed: (f.uid % 97) / 97, dim: sc < 1 ? 0.25 : 0,
-        });
+        }));
       }
       ctx.globalAlpha = 1;
       const h = size * u;
@@ -101,26 +132,51 @@ export class BattleView {
     back.forEach((f, i) => drawFoe(f, slots[i % 2][0], slots[i % 2][1], slots[i % 2][2]));
     if (front) drawFoe(front, 0, 0, 1);
 
-    drawCloneBack(ctx, px + this.player.lunge * W * 0.05, py + H * 0.03, H * 0.4, traits, {
+    const cu = H * 0.4;
+    this.shadow(ctx, px, py - H * 0.005, cu * 0.45, 0);
+    const cx = px + this.player.lunge * W * 0.05;
+    this.sprite(ctx, cx - cu * 1.1, py - cu * 1.45, cu * 2.2, cu * 1.5, (c) => drawCloneBack(c, cx, py, cu, traits, {
       t, flash: this.player.flash, lunge: this.player.lunge, heal: this.player.heal, boil: Math.floor(t * 8) * 3,
-    });
+    }));
+    this.me = { x: px, y: py - cu * 0.55, h: cu * 0.8 };
+    this.hand = { x: px + cu * 0.3, y: py - cu * 0.7, h: cu * 0.3 };
+    this.fx.draw(ctx, t);
     ctx.restore();
   }
 
-  private ledge(ctx: CanvasRenderingContext2D, x: number, y: number, rx: number, ry: number, th: Theme) {
-    ctx.fillStyle = th.ledge;
+  private scratch: HTMLCanvasElement | null = null;
+
+  /** Draw into a scratch layer the size of the box, then onto the scene. */
+  private sprite(ctx: CanvasRenderingContext2D, bx: number, by: number, bw: number, bh: number, draw: (c: CanvasRenderingContext2D) => void) {
+    const sc = ctx.getTransform().a || 1;
+    const cw = Math.max(1, Math.ceil(bw * sc));
+    const ch = Math.max(1, Math.ceil(bh * sc));
+    if (typeof document === 'undefined') return;
+    const cv = (this.scratch ??= document.createElement('canvas'));
+    if (cv.width < cw || cv.height < ch) { cv.width = Math.max(cv.width, cw); cv.height = Math.max(cv.height, ch); }
+    const c = cv.getContext('2d')!;
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.clearRect(0, 0, cw, ch);
+    c.setTransform(sc, 0, 0, sc, -bx * sc, -by * sc);
+    c.globalAlpha = 1;
+    draw(c);
+    ctx.drawImage(cv, 0, 0, cw, ch, bx, by, bw, bh);
+  }
+
+  /** A soft contact shadow on the floor, no platform. */
+  private shadow(ctx: CanvasRenderingContext2D, x: number, y: number, rx: number, fade: number) {
+    const g = ctx.createRadialGradient(x, y, 0, x, y, rx);
+    g.addColorStop(0, `rgba(0,0,0,${0.55 * (1 - fade)})`);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(1, 0.22);
+    ctx.translate(-x, -y);
     ctx.beginPath();
-    ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+    ctx.arc(x, y, rx, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = th.ledgeTop;
-    ctx.beginPath();
-    ctx.ellipse(x, y - ry * 0.18, rx * 0.94, ry * 0.8, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = INK.boneDim;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.ellipse(x, y - ry * 0.18, rx * 0.94, ry * 0.8, 0, 0, Math.PI * 2);
-    ctx.stroke();
+    ctx.restore();
   }
 
   private drawBackdrop(ctx: CanvasRenderingContext2D, W: number, H: number, t: number, th: Theme) {

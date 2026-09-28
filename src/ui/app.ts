@@ -15,6 +15,7 @@ import {
   type Trait,
 } from '../core/traits';
 import { BattleView } from '../render/battleview';
+import { fxLead } from '../render/attackfx';
 import { INK } from '../render/palette';
 import { Print } from '../render/print';
 import { WorldView } from '../render/worldview';
@@ -72,6 +73,7 @@ export class App {
   private dispFoe = new Map<number, number>();
   private hidden = new Set<number>();
   private lines: string[] = [];
+  private pendingLead = 0;
   private sheet: Sheet = null;
   private msgTimer = 0;
   private lastMsgCount = 0;
@@ -424,8 +426,14 @@ export class App {
     if (!this.qTimer) this.next();
   }
 
-  private apply(e: BattleEv) {
+  /** Show one battle event. Returns how long it holds the queue (ms), if not the default. */
+  private apply(e: BattleEv): number | undefined {
     switch (e.k) {
+      case 'card': return fxLead(this.bv.playCard(e.id, e.target, e.hits), e.hits);
+      case 'strike': {
+        const f = this.run?.battle?.foes.find((q) => q.uid === e.uid);
+        return f ? fxLead(this.bv.strike(e.uid, f.id, e.hits), e.hits) : undefined;
+      }
       case 'text': this.lines.push(e.s); if (this.lines.length > 2) this.lines.shift(); break;
       case 'hitFoe': this.dispFoe.set(e.uid, (this.dispFoe.get(e.uid) ?? 0) - e.n); this.bv.anim(e.uid).flash = 1; break;
       case 'hitPlayer': this.dispP -= e.n; this.bv.player.flash = e.n > 0 ? 1 : 0.3; this.bv.shake = e.n > 0 ? Math.min(1, 0.3 + e.n / 20) : 0; break;
@@ -435,14 +443,18 @@ export class App {
       case 'summon': this.hidden.delete(e.uid); break;
       default: break;
     }
+    return undefined;
   }
 
   private next() {
     const e = this.queue.shift();
     if (!e) { this.qTimer = 0; this.finishQueue(); return; }
-    this.apply(e);
+    const lead = this.apply(e);
     this.refreshBattle();
-    const delay = e.k === 'text' ? 520 : e.k === 'act' ? 160 : 90;
+    // a text line right after an animation shares its time instead of waiting twice
+    const after = this.queue[0];
+    const delay = lead !== undefined ? (after?.k === 'text' ? 0 : lead) : e.k === 'text' ? Math.max(520, this.pendingLead) : e.k === 'act' ? 160 : 90;
+    this.pendingLead = lead !== undefined && after?.k === 'text' ? lead : 0;
     this.qTimer = window.setTimeout(() => this.next(), delay);
   }
 
@@ -600,7 +612,7 @@ export class App {
     }
     const me = this.root.querySelector<HTMLElement>('.plate.me');
     if (me) {
-      me.style.top = `${this.sh * 0.6}px`;
+      me.style.top = `${this.sh * 0.68}px`;
       const p = b.player;
       const hp = Math.max(0, this.dispP);
       const st = [p.plate ? `⬢${p.plate}` : '', p.weak ? `weak ${p.weak}` : '', p.expose ? `exp ${p.expose}` : '',

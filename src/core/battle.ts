@@ -51,7 +51,11 @@ export type BattleEv =
   | { k: 'heal'; n: number }
   | { k: 'plate'; who: 'p' | number }
   | { k: 'summon'; uid: number }
-  | { k: 'status'; who: 'p' | number };
+  | { k: 'status'; who: 'p' | number }
+  /** A card is played: the view animates its attack or effect. */
+  | { k: 'card'; id: string; target?: number; hits: number }
+  /** An enemy attacks: the view animates the blow. */
+  | { k: 'strike'; uid: number; hits: number };
 
 export interface BattleState {
   foes: Foe[];
@@ -251,6 +255,8 @@ export function playCard(s: BattleState, uid: number, targetUid: number | undefi
   s.biomass -= r.bioCost;
   s.played += 1;
   s.hand.splice(idx, 1);
+  const aimed = aliveFoes(s).find((f) => f.uid === targetUid) ?? aliveFoes(s)[0];
+  const textAt = ev.length;
   ev.push({ k: 'text', s: `You use ${def.name.toUpperCase()}!` });
 
   const emp = s.empower;
@@ -265,6 +271,9 @@ export function playCard(s: BattleState, uid: number, targetUid: number | undefi
     if (e.op === 'plate') e.v += bonus.plate;
   }
   s.lastAttack = fx.some((e) => e.op === 'dmg' || e.op === 'shatter');
+  const dmgFx = fx.find((e) => e.op === 'dmg');
+  // the animation starts first; the text line shows while it plays
+  ev.splice(textAt, 0, { k: 'card', id: card.id, target: aimed?.uid, hits: dmgFx && dmgFx.op === 'dmg' ? dmgFx.hits ?? 1 : 1 });
   s.turnPlays += 1;
   const resonates = !!s.mods.resonance && s.turnPlays % 3 === 0;
 
@@ -571,6 +580,7 @@ function enemyTurn(s: BattleState, rng: Rng, ev: BattleEv[]) {
       ev.push({ k: 'summon', uid: nf.uid }, { k: 'text', s: `${NAME(nf)} crawls out!` });
     }
     if (it.attack !== undefined) {
+      ev.push({ k: 'strike', uid: f.uid, hits: n.hits });
       for (let h = 0; h < n.hits; h++) {
         const raw = n.attack;
         const d = Math.max(0, raw - s.player.plate);

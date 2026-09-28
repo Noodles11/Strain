@@ -53,6 +53,33 @@ Bot sim, two landings (rushes each boss, 20 seeds):
 | all 7 | 18 | 2 | 0 |
 | all 9 | 20 | 0 | 0 |
 
+## Battle scene
+
+- Clone and enemies stand on one floor in perspective: enemies further back (higher, smaller), the clone close up.
+  No platforms; each figure casts a soft contact shadow. Back-row enemies stand further back still.
+- Every card has an attack animation (`src/render/attackfx.ts`), played before its hit lands:
+
+| Look | Cards |
+|---|---|
+| Straight cut | Scalpel, Unscarred Edge, Sibling Print, Feeding Blade, Graft |
+| Double peel | Flense |
+| Saw teeth, one row per hit | Bonesaw |
+| Heavy cut | Hunger Clock |
+| Harpoon: head flies out on a slack line, bites, line snaps taut, head reels back | Harpoon, Salvage Hook (hook head) |
+| Dart and ripple | Harvest Needle, Triage Tag, Overclock Jack |
+| Pellet spread to every enemy | Scatter Rounds, Split Lens |
+| Psychic wave to the head | Neural Spike |
+| Cut, then blood flows back to you | Siphon Blade |
+| Cracks and flying shards | Shatter |
+| Cut with a violet echo | Resonant Strike |
+| Hex shield | Brace, Callus, Crystal Skin, Scar Tissue, Cold Echo, Grief Engine |
+| Rising crosses | medic cards |
+| Sparks / swirl | Adrenal Leak / Donor Cell, Cannibal Print, Mutagen Flask |
+
+- Enemy attacks: claws (Copy, Hollow Twin), bites (Hull Tick, Shardling), slams with a floor ring (Husk, Vat Bloom,
+  Lattice Crawler, The First), bolts (Sentry Drone), beams (Choir, Geode, Refractor, Prism Mother).
+- Hit flashes are drawn on each figure's own layer, so only the figure lights up.
+
 ## Not in this build yet
 
 - Mireth, Orun — S7.
