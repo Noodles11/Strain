@@ -79,6 +79,7 @@ Bot sim, two landings (rushes each boss, 20 seeds):
 - Enemy attacks: claws (Copy, Hollow Twin), bites (Hull Tick, Shardling), slams with a floor ring (Husk, Vat Bloom,
   Lattice Crawler, The First), bolts (Sentry Drone), beams (Choir, Geode, Refractor, Prism Mother).
 - Hit flashes are drawn on each figure's own layer, so only the figure lights up.
+- **Summoning sickness:** anything that arrives mid-fight (a boss's summons, split Shardlings) skips its first enemy turn. Its plate reads SUMMONED until then.
 
 ## Not in this build yet
 

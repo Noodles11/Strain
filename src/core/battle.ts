@@ -30,6 +30,8 @@ export interface Foe {
   tier: number;
   /** Already split once (Shardlings). */
   split?: boolean;
+  /** Arrived mid-fight: skips its first enemy turn. */
+  sick?: boolean;
 }
 
 export interface BattlePlayer {
@@ -446,6 +448,7 @@ function killFoe(s: BattleState, f: Foe, ev: BattleEv[]) {
       const nf = makeFoe(f.id, f.tier, s.nextUid++, 1);
       nf.maxHp = nf.hp = Math.max(1, Math.ceil(f.maxHp / 2));
       nf.split = true;
+      nf.sick = true;
       nf.intentIdx = f.intentIdx + 1;
       s.foes.push(nf);
       ev.push({ k: 'summon', uid: nf.uid });
@@ -540,6 +543,7 @@ export function currentIntent(f: Foe): Intent {
 /** Final numbers of a foe's next move, before your plating. */
 export function intentNumbers(s: BattleState, f: Foe): { attack: number; hits: number; plate: number; weak: number; expose: number; strength: number; summon?: string; ally: number; label: string } {
   const def: EnemyDef = ENEMIES[f.id];
+  if (f.sick) return { label: 'Summoned', attack: 0, hits: 1, plate: 0, weak: 0, expose: 0, strength: 0, ally: 0 };
   const it = currentIntent(f);
   let attack = 0;
   if (it.attack !== undefined) {
@@ -568,6 +572,12 @@ function enemyTurn(s: BattleState, rng: Rng, ev: BattleEv[]) {
   for (const f of [...aliveFoes(s)]) {
     if (s.phase !== 'player') break;
     if (!f.alive) continue;
+    if (f.sick) {
+      // summoning sickness: a creature that arrived mid-fight spends its first turn finding its feet
+      f.sick = false;
+      ev.push({ k: 'text', s: `${NAME(f)} is still finding its feet.` });
+      continue;
+    }
     const def = ENEMIES[f.id];
     const n = intentNumbers(s, f);
     const it = currentIntent(f);
@@ -584,6 +594,7 @@ function enemyTurn(s: BattleState, rng: Rng, ev: BattleEv[]) {
     if (n.summon && aliveFoes(s).length < 3) {
       const nf = makeFoe(n.summon, f.tier, s.nextUid++, 1);
       nf.split = true;
+      nf.sick = true;
       s.foes.push(nf);
       ev.push({ k: 'summon', uid: nf.uid }, { k: 'text', s: `${NAME(nf)} crawls out!` });
     }

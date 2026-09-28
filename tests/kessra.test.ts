@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { endTurn, playCard, startBattle, type CardInst } from '../src/core/battle';
+import { endTurn, intentNumbers, playCard, startBattle, type CardInst } from '../src/core/battle';
 import { newMeta } from '../src/core/meta';
 import { Rng } from '../src/core/rng';
 import { chartOptions, land, newRun } from '../src/core/run';
@@ -84,5 +84,40 @@ describe('damage events', () => {
     const total = hits.reduce((a, e) => a + (e.k === 'hitFoe' ? e.n : 0), 0);
     expect(total).toBe(3);
     expect(f.hp).toBe(0);
+  });
+});
+
+describe('summoning sickness', () => {
+  it('split halves skip their first enemy turn, then attack as normal', () => {
+    const { s } = setup(['shardling'], deckOf('hunger', 'hunger', 'hunger', 'hunger', 'hunger'));
+    const rng = new Rng(9);
+    s.foes[0].hp = 3;
+    playCard(s, s.hand[0].uid, undefined, rng);
+    const halves = s.foes.filter((f) => f.alive);
+    expect(halves.every((f) => f.sick)).toBe(true);
+    expect(intentNumbers(s, halves[0]).attack).toBe(0);
+    s.player.plate = 0;
+    const hp = s.player.hp;
+    endTurn(s, rng);
+    expect(s.player.hp).toBe(hp);
+    expect(halves.every((f) => !f.sick)).toBe(true);
+    s.player.plate = 0;
+    s.player.keep = 0;
+    const hp2 = s.player.hp;
+    endTurn(s, rng);
+    expect(s.player.hp).toBeLessThan(hp2);
+  });
+
+  it('a creature summoned by a boss waits a turn before acting', () => {
+    const { s } = setup(['prism'], deckOf('brace', 'brace', 'brace', 'brace', 'brace'));
+    const rng = new Rng(5);
+    const boss = s.foes[0];
+    boss.phase2 = true;
+    boss.intentIdx = 0; // Shed: summons a Shardling
+    endTurn(s, rng);
+    const pup = s.foes.find((f) => f.id === 'shardling')!;
+    expect(pup.sick).toBe(true);
+    endTurn(s, rng);
+    expect(pup.sick).toBe(false);
   });
 });

@@ -592,7 +592,8 @@ export class App {
         if (f.alive && quiet && b.phase === 'player') {
           const n = intentNumbers(b, f);
           const parts: string[] = [];
-          if (currentIntent(f).attack !== undefined) parts.push(`ATK ${n.attack}${n.hits > 1 ? `×${n.hits}` : ''}`);
+          if (f.sick) parts.push('SUMMONED');
+          else if (currentIntent(f).attack !== undefined) parts.push(`ATK ${n.attack}${n.hits > 1 ? `×${n.hits}` : ''}`);
           if (n.plate) parts.push(`PLATE ${n.plate}`);
           if (n.strength) parts.push(`STR+${n.strength}`);
           if (n.weak) parts.push(`weak ${n.weak}`);
