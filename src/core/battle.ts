@@ -380,9 +380,10 @@ function runFx(s: BattleState, fx: Effect<number>[], card: CardInst, targetUid: 
         if (f && f.plate > 0) {
           const d = f.plate * e.v;
           f.plate = 0;
+          const lost = hpLost(f.hp, d);
           f.hp -= d;
           dealt += d;
-          ev.push({ k: 'hitFoe', uid: f.uid, n: d }, { k: 'text', s: `${NAME(f)}'s plating shatters! ${d} damage.` });
+          ev.push({ k: 'hitFoe', uid: f.uid, n: lost }, { k: 'text', s: `${NAME(f)}'s plating shatters! ${d} damage.` });
           if (f.hp <= 0) killFoe(s, f, ev);
           else checkPhase(s, f, ev);
         } else if (f) ev.push({ k: 'text', s: `${NAME(f)} has no plating to break.` });
@@ -415,17 +416,24 @@ function hitFoe(s: BattleState, f: Foe, raw: number, ev: BattleEv[]): number {
   if (f.expose > 0) d = Math.floor(d * 1.5);
   const reflect = ENEMIES[f.id].reflect && f.plate > 0 ? Math.floor(d * ENEMIES[f.id].reflect!) : 0;
   d = Math.max(0, d - f.plate);
+  const lost = hpLost(f.hp, d);
   f.hp -= d;
-  ev.push({ k: 'hitFoe', uid: f.uid, n: d }, { k: 'text', s: d > 0 ? `${NAME(f)} takes ${d}.` : `${NAME(f)}'s plating holds.` });
+  ev.push({ k: 'hitFoe', uid: f.uid, n: lost }, { k: 'text', s: d > 0 ? `${NAME(f)} takes ${d}.` : `${NAME(f)}'s plating holds.` });
   if (f.hp <= 0) killFoe(s, f, ev);
   else checkPhase(s, f, ev);
   if (reflect > 0 && s.player.hp > 0) {
+    const lost = hpLost(s.player.hp, reflect);
     s.player.hp -= reflect;
     s.lostHp = true;
-    ev.push({ k: 'hitPlayer', n: reflect }, { k: 'text', s: `The light bounces back. You take ${reflect}.` });
+    ev.push({ k: 'hitPlayer', n: lost }, { k: 'text', s: `The light bounces back. You take ${reflect}.` });
     if (s.player.hp <= 0) { s.player.hp = 0; s.phase = 'lost'; ev.push({ k: 'text', s: 'Your print fails.' }); }
   }
   return d;
+}
+
+/** HP a hit actually removes: overkill past zero doesn't count, so displays never bounce back up. */
+function hpLost(hp: number, d: number): number {
+  return Math.max(0, Math.min(d, hp));
 }
 
 function killFoe(s: BattleState, f: Foe, ev: BattleEv[]) {
@@ -584,17 +592,20 @@ function enemyTurn(s: BattleState, rng: Rng, ev: BattleEv[]) {
       for (let h = 0; h < n.hits; h++) {
         const raw = n.attack;
         const d = Math.max(0, raw - s.player.plate);
+        let lostNow = 0;
         if (raw > 0 && d === 0) s.stopped += 1;
         if (d > 0) {
+          lostNow = hpLost(s.player.hp, d);
           s.player.hp -= d;
           s.lostHp = true;
           for (const c of s.hand) if (CARDS[c.id].dyn === 'scartissue') s.surge.mgt += 1;
         }
-        ev.push({ k: 'hitPlayer', n: d }, { k: 'text', s: d > 0 ? `You take ${d}.` : 'Your plating holds.' });
+        ev.push({ k: 'hitPlayer', n: lostNow }, { k: 'text', s: d > 0 ? `You take ${d}.` : 'Your plating holds.' });
         if (s.player.hp <= 0) break;
         if (d > 0 && s.mods.thorns && f.alive) {
+          const lost = hpLost(f.hp, s.mods.thorns);
           f.hp -= s.mods.thorns;
-          ev.push({ k: 'hitFoe', uid: f.uid, n: s.mods.thorns }, { k: 'text', s: `Thorns: ${NAME(f)} takes ${s.mods.thorns}.` });
+          ev.push({ k: 'hitFoe', uid: f.uid, n: lost }, { k: 'text', s: `Thorns: ${NAME(f)} takes ${s.mods.thorns}.` });
           if (f.hp <= 0) { killFoe(s, f, ev); break; }
         }
       }

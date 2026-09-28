@@ -73,3 +73,16 @@ describe('Kessra', () => {
     expect(chartOptions(r).find((o) => o.id === 'mireth')!.state).toBe('lost');
   });
 });
+
+describe('damage events', () => {
+  it('report only the HP actually lost, so a display rewound from the result never rises', () => {
+    const { s } = setup(['tick'], deckOf('hunger', 'hunger', 'hunger', 'hunger', 'hunger'));
+    const f = s.foes[0];
+    f.hp = 3;
+    const ev = playCard(s, s.hand[0].uid, f.uid, new Rng(1));
+    const hits = ev.filter((e) => e.k === 'hitFoe' && e.uid === f.uid);
+    const total = hits.reduce((a, e) => a + (e.k === 'hitFoe' ? e.n : 0), 0);
+    expect(total).toBe(3);
+    expect(f.hp).toBe(0);
+  });
+});
