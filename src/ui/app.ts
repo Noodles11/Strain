@@ -74,6 +74,7 @@ export class App {
   private hidden = new Set<number>();
   private lines: string[] = [];
   private pendingLead = 0;
+  private introUntil = 0;
   /** Foes whose move is still playing out: they keep showing the intent they are acting on. */
   private pendingAct = new Set<number>();
   private shownIntent = new Map<number, string>();
@@ -332,8 +333,8 @@ export class App {
       let strength = 0;
       if (this.layout === 'battle' && r.battle) {
         this.bv.update(dt);
-        this.bv.draw(ctx, r.battle, runTraits(r), this.sw, this.sh, t, r.planet);
-        strength = (1 - this.bv.intro) * 1.2;
+        this.bv.draw(ctx, r.battle, runTraits(r), this.sw, this.sh, t, r.planet, r.fight?.at ? { run: r, at: r.fight.at } : undefined);
+        strength = (1 - this.bv.cam) * 0.8;
       } else {
         const k = 1 - Math.exp(-dt * 16);
         this.drawX += (r.x - this.drawX) * k;
@@ -436,7 +437,12 @@ export class App {
       this.bv.reset();
       this.lines = [];
       this.syncLayout();
-      this.play(takeEvents());
+      // let the camera swing down from the map into the fight before anything happens
+      const ev = takeEvents();
+      this.prime(ev);
+      this.introUntil = performance.now() + 1100;
+      window.setTimeout(() => { this.introUntil = 0; this.play(ev, true); }, 1100);
+      this.refresh();
       return;
     }
     this.refresh();
@@ -445,13 +451,14 @@ export class App {
   // ---------------------------------------------------------------- battle
 
   private busy(): boolean {
-    return this.queue.length > 0 || this.qTimer !== 0;
+    return this.queue.length > 0 || this.qTimer !== 0 || this.introUntil > performance.now();
   }
 
-  private play(ev: BattleEv[]) {
+  /** Rewind shown HP to what it was before these events play. */
+  private prime(ev: BattleEv[], fresh = true) {
     const b = this.run?.battle;
-    if (!b) { this.syncLayout(); return; }
-    if (!this.busy()) {
+    if (!b) return;
+    if (fresh) {
       this.dispP = b.player.hp;
       for (const f of b.foes) this.dispFoe.set(f.uid, f.hp);
     }
@@ -463,6 +470,11 @@ export class App {
       if (e.k === 'heal') this.dispP -= e.n;
       if (e.k === 'summon') this.hidden.add(e.uid);
     }
+  }
+
+  private play(ev: BattleEv[], primed = false) {
+    if (!this.run?.battle) { this.syncLayout(); return; }
+    if (!primed) this.prime(ev, !this.busy());
     for (const e of ev) if (e.k === 'act') this.pendingAct.add(e.uid);
     this.queue.push(...ev);
     this.saveRun();

@@ -81,6 +81,15 @@ Bot sim, two landings (rushes each boss, 20 seeds):
 - Hit flashes are drawn on each figure's own layer, so only the figure lights up.
 - **Summoning sickness:** anything that arrives mid-fight (a boss's summons, split Shardlings) skips its first enemy turn. Its plate reads SUMMONED until then.
 
+## Battle backdrop
+
+- The fight happens where it started: `src/render/placeview.ts` rebuilds the real map tiles around the fight in 3D
+  (walls, ceiling, lamps, props like caches, pods and terminals; crystals on Kessra), seen from behind the clone.
+- Entering a fight, the camera swings from the top-down map down to eye level behind the clone (1.1 s);
+  the clone and enemies fade in, then the fight begins. Shown HP holds at the pre-fight values meanwhile.
+- Walls close to the camera fade out so they never block the view; far tiles sink into fog.
+- Dark sections darken the room; the storm tints it and adds rain.
+
 ## New lab mobs
 
 | Mob | Where | Rule |

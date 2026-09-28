@@ -5,6 +5,8 @@ import type { BattleState } from '../core/battle';
 import type { Traits } from '../core/traits';
 import { theme, type Theme } from './theme';
 import { cardFx, enemyFx, FxLayer, type Anchor } from './attackfx';
+import { PlaceView, type FightAt } from './placeview';
+import type { RunState } from '../core/run';
 
 export interface FoeAnim {
   flash: number;
@@ -22,6 +24,9 @@ export class BattleView {
   target = -1;
   hit: { uid: number; x: number; y: number; w: number; h: number }[] = [];
   fx = new FxLayer();
+  place = new PlaceView();
+  /** Entry transition: 0 top-down over the map, 1 settled behind the clone. */
+  cam = 1;
   private now = 0;
   private anchors = new Map<number, Anchor>();
   private me: Anchor = { x: 0, y: 0, h: 1 };
@@ -34,6 +39,7 @@ export class BattleView {
     this.shake = 0;
     this.intro = 0;
     this.target = -1;
+    this.cam = 0;
     this.fx.clear();
   }
 
@@ -62,6 +68,7 @@ export class BattleView {
 
   update(dt: number) {
     this.intro = Math.min(1, this.intro + dt * 1.6);
+    this.cam = Math.min(1, this.cam + dt / 1.2);
     for (const a of this.foes.values()) {
       a.flash = Math.max(0, a.flash - dt * 2.5);
       a.lunge = Math.max(0, a.lunge - dt * 3);
@@ -73,19 +80,30 @@ export class BattleView {
     this.shake = Math.max(0, this.shake - dt * 3);
   }
 
-  draw(ctx: CanvasRenderingContext2D, b: BattleState, traits: Traits, W: number, H: number, t: number, planet = 'derelict') {
+  draw(ctx: CanvasRenderingContext2D, b: BattleState, traits: Traits, W: number, H: number, t: number, planet = 'derelict', place?: { run: RunState; at: FightAt }) {
     const th = theme(planet);
     this.now = t;
     ctx.save();
     if (this.shake > 0) ctx.translate(Math.sin(t * 90) * this.shake * 8, Math.cos(t * 70) * this.shake * 4);
-    this.drawBackdrop(ctx, W, H, t, th);
+    // fighters fade in as the camera settles behind the clone
+    const show = place ? Math.max(0, Math.min(1, (this.cam - 0.55) / 0.35)) : 1;
+    if (place) {
+      ctx.fillStyle = th.skyTop;
+      ctx.fillRect(-20, -20, W + 40, H + 40);
+      const sky = Math.max(0, Math.min(1, (this.cam - 0.45) / 0.45));
+      if (sky > 0) {
+        ctx.save();
+        ctx.globalAlpha = sky;
+        this.drawBackdrop(ctx, W, H, t, th);
+        ctx.restore();
+      }
+      this.place.draw(ctx, place.run, place.at, W, H, t, th, this.cam);
+    } else this.drawBackdrop(ctx, W, H, t, th);
 
     const ease = (x: number) => 1 - (1 - x) ** 3;
-    const k = ease(this.intro);
-
-    // both stand on the same floor: the foe further back, the clone close to us
-    const ex = W * 0.71 + (1 - k) * W * 0.6;
-    const ey = H * 0.63;
+    const k = place ? 1 : ease(this.intro);
+    // without a map (tests, old saves) fall back to the fixed layout
+    const fixed = { x: W * 0.71 + (1 - k) * W * 0.6, y: H * 0.63 };
     const px = W * 0.24 - (1 - k) * W * 0.6;
     const py = H * 1.07;
 
@@ -93,52 +111,69 @@ export class BattleView {
     const alive = b.foes.filter((f) => f.alive);
     const front = alive.find((f) => f.uid === this.target) ?? alive[0] ?? shown[0];
     const back = shown.filter((f) => f !== front);
-    // further away = higher on the floor and smaller
-    const slots: [number, number, number][] = [[-0.22, -0.05, 0.74], [0.16, -0.08, 0.66]];
+    // further away = higher on the floor and smaller: one tile ahead for the front foe, two for the back row
+    const slots: [number, number][] = [[2, -0.8], [2, 0.8]];
+    const frontPx = place ? this.place.ground(place.at, 1, 0)?.px ?? 1 : 1;
     this.hit = [];
     this.anchors.clear();
-    const drawFoe = (f: (typeof shown)[number], dx: number, dy: number, sc: number) => {
+    const drawFoe = (f: (typeof shown)[number], ahead: number, side: number) => {
       const a = this.anim(f.uid);
       const size = CREATURE_SIZE[f.id] ?? 1;
+      let x: number;
+      let y: number;
+      let sc: number;
+      if (place) {
+        const g = this.place.ground(place.at, ahead, side);
+        if (!g) return;
+        x = g.x;
+        y = g.y;
+        sc = g.px / frontPx;
+      } else {
+        x = fixed.x + side * W * 0.25;
+        y = fixed.y - (ahead - 1) * H * 0.07;
+        sc = ahead > 1 ? 0.7 : 1;
+      }
       const u = H * 0.34 * sc * (size < 0.8 ? 1.5 : size > 1.5 ? 0.85 : 1);
-      const x = ex + dx * W;
-      const y = ey + dy * H;
       const h0 = size * u;
+      ctx.save();
+      ctx.globalAlpha = show;
       this.shadow(ctx, x, y, u * 0.55, a.dead);
       if (f.alive) this.anchors.set(f.uid, { x: x - a.lunge * W * 0.06, y: y - h0 * 0.5, h: Math.max(h0, H * 0.18) });
       const blink = a.flash > 0 && Math.floor(a.flash * 12) % 2 === 0;
-      if (a.dead > 0) ctx.globalAlpha = 1 - a.dead;
+      if (a.dead > 0) ctx.globalAlpha = show * (1 - a.dead);
       if (!blink) {
         // drawn on its own layer so hit flashes tint only the creature, not the scene behind it
         const lx = x - a.lunge * W * 0.06;
         const ly = y + a.lunge * H * 0.03;
         this.sprite(ctx, lx - u * 2, ly - u * 2.3, u * 4, u * 2.6, (c) => drawCreature(c, f.id, lx, ly, u, {
-          t: t + f.uid, boil: Math.floor(t * 8) * 3, flash: a.flash, lunge: a.lunge, dead: a.dead, seed: (f.uid % 97) / 97, dim: sc < 1 ? 0.25 : 0,
+          t: t + f.uid, boil: Math.floor(t * 8) * 3, flash: a.flash, lunge: a.lunge, dead: a.dead, seed: (f.uid % 97) / 97, dim: sc < 0.9 ? 0.25 : 0,
           state: f.asleep ? 1 : f.heat !== undefined ? f.heat / 4 : 0,
         }));
       }
-      ctx.globalAlpha = 1;
-      const h = size * u;
-      if (f.alive) this.hit.push({ uid: f.uid, x: x - u * 0.6, y: y - h, w: u * 1.2, h });
-      if (f.alive && f === front && alive.length > 1) {
+      ctx.restore();
+      if (f.alive) this.hit.push({ uid: f.uid, x: x - u * 0.6, y: y - h0, w: u * 1.2, h: h0 });
+      if (f.alive && f === front && alive.length > 1 && show > 0.9) {
         ctx.fillStyle = INK.sodium;
         ctx.beginPath();
-        ctx.moveTo(x, y - h - H * 0.02);
-        ctx.lineTo(x - 7, y - h - H * 0.02 - 10);
-        ctx.lineTo(x + 7, y - h - H * 0.02 - 10);
+        ctx.moveTo(x, y - h0 - H * 0.02);
+        ctx.lineTo(x - 7, y - h0 - H * 0.02 - 10);
+        ctx.lineTo(x + 7, y - h0 - H * 0.02 - 10);
         ctx.closePath();
         ctx.fill();
       }
     };
-    back.forEach((f, i) => drawFoe(f, slots[i % 2][0], slots[i % 2][1], slots[i % 2][2]));
-    if (front) drawFoe(front, 0, 0, 1);
+    back.forEach((f, i) => drawFoe(f, slots[i % 2][0], slots[i % 2][1]));
+    if (front) drawFoe(front, 1, 0);
 
     const cu = H * 0.4;
-    this.shadow(ctx, px, py - H * 0.005, cu * 0.45, 0);
-    const cx = px + this.player.lunge * W * 0.05;
+    const cx = px + this.player.lunge * W * 0.05 - (1 - show) * W * 0.25;
+    ctx.save();
+    ctx.globalAlpha = show;
+    this.shadow(ctx, cx, py - H * 0.005, cu * 0.45, 0);
     this.sprite(ctx, cx - cu * 1.1, py - cu * 1.45, cu * 2.2, cu * 1.5, (c) => drawCloneBack(c, cx, py, cu, traits, {
       t, flash: this.player.flash, lunge: this.player.lunge, heal: this.player.heal, boil: Math.floor(t * 8) * 3,
     }));
+    ctx.restore();
     this.me = { x: px, y: py - cu * 0.55, h: cu * 0.8 };
     this.hand = { x: px + cu * 0.3, y: py - cu * 0.7, h: cu * 0.3 };
     this.fx.draw(ctx, t);

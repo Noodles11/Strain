@@ -51,6 +51,18 @@ export interface FightCtx {
   reward: boolean;
   ambush: boolean;
   nestId?: number;
+  /** Where the fight happens: the clone's tile, facing the foe. Drives the 3D battle backdrop. */
+  at?: { x: number; y: number; fx: number; fy: number };
+}
+
+/** The clone's tile and the unit direction toward (tx, ty). */
+export function facingToward(r: RunState, tx: number, ty: number): { x: number; y: number; fx: number; fy: number } {
+  const dx = tx - r.x;
+  const dy = ty - r.y;
+  if (dx === 0 && dy === 0) return { x: r.x, y: r.y, fx: r.facing[0], fy: r.facing[1] };
+  return Math.abs(dx) >= Math.abs(dy)
+    ? { x: r.x, y: r.y, fx: Math.sign(dx), fy: 0 }
+    : { x: r.x, y: r.y, fx: 0, fy: Math.sign(dy) };
 }
 
 export interface RunState {
@@ -605,7 +617,7 @@ function beginFight(r: RunState, m: Mob, how: 'player' | 'mob' | 'behind' | 'amb
   const lit = r.world.lit.includes(m.zone);
   r.stalk = false;
   if (ambush) r.stats.ambushed += 1;
-  startFight(r, m.foes, tier, { mobId: m.id, tier, kind: m.kind, reward: m.reward, ambush }, ambush, firstStrike, lit ? r.flarePower : 0);
+  startFight(r, m.foes, tier, { mobId: m.id, tier, kind: m.kind, reward: m.reward, ambush, at: facingToward(r, m.x, m.y) }, ambush, firstStrike, lit ? r.flarePower : 0);
 }
 
 function startFight(r: RunState, foes: string[], tier: number, ctx: FightCtx, ambush: boolean, firstStrike: boolean, expose: number) {
@@ -951,7 +963,7 @@ export function doAction(r: RunState, x: number, y: number, id: string): boolean
       return true;
     case 'rest': rest(r, p!); return true;
     case 'attack':
-      startFight(r, here(r).nest, r.world.tier, { mobId: -1, tier: r.world.tier, kind: 'nest', reward: false, ambush: false, nestId: p!.id }, false, false, 0);
+      startFight(r, here(r).nest, r.world.tier, { mobId: -1, tier: r.world.tier, kind: 'nest', reward: false, ambush: false, nestId: p!.id, at: facingToward(r, p!.x, p!.y) }, false, false, 0);
       return true;
     case 'launch': launch(r); return true;
   }
