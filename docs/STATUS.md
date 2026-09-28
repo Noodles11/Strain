@@ -81,6 +81,17 @@ Bot sim, two landings (rushes each boss, 20 seeds):
 - Hit flashes are drawn on each figure's own layer, so only the figure lights up.
 - **Summoning sickness:** anything that arrives mid-fight (a boss's summons, split Shardlings) skips its first enemy turn. Its plate reads SUMMONED until then.
 
+## New lab mobs
+
+| Mob | Where | Rule |
+|---|---|---|
+| Drip Stand (easy) | outer lab, always with a partner | Heals the most hurt ally (5 + Will/2); pokes for 3+ when alone |
+| Test Subject (easy) | outer lab | Very fast, weak bite; flees after its 2nd turn (no corpse, no loot). Caught: 8 biomass, +2 bonus Codons. Backs away from you on the map |
+| Cryo Sleeper (medium) | inner lab, also as an ambusher | Starts asleep behind plating (3 + tier) that doesn't clear; wakes after 3 rounds or below 50% HP, then Thaw (+plating, +2 strength) and Crush. Ambushing, it starts awake |
+| Incinerator Unit (medium) | inner lab and the lair | Heats up each turn; on its 4th turn it explodes for 20 + 2·tier straight through plating and is gone (no loot). Weak shrinks the blast |
+
+Plates read ASLEEP, FLEES IN n, BLOWS IN n and, on the last turn, the blast damage.
+
 ## Card faces
 
 - Effects are icons, not words: blade = damage, crowd = all enemies, hex = plating, cross = heal, cards = draw,

@@ -114,6 +114,7 @@ export class BattleView {
         const ly = y + a.lunge * H * 0.03;
         this.sprite(ctx, lx - u * 2, ly - u * 2.3, u * 4, u * 2.6, (c) => drawCreature(c, f.id, lx, ly, u, {
           t: t + f.uid, boil: Math.floor(t * 8) * 3, flash: a.flash, lunge: a.lunge, dead: a.dead, seed: (f.uid % 97) / 97, dim: sc < 1 ? 0.25 : 0,
+          state: f.asleep ? 1 : f.heat !== undefined ? f.heat / 4 : 0,
         }));
       }
       ctx.globalAlpha = 1;

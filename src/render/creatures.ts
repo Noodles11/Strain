@@ -9,6 +9,8 @@ export interface CreatureFx {
   dead: number; // 0 alive .. 1 swollen, about to burst
   seed: number;
   dim: number; // 0 fully lit .. 1 lost in fog
+  /** Creature-specific state: 1 = Cryo Sleeper still asleep; Incinerator heat 0..1. */
+  state?: number;
 }
 
 /** Relative height of each creature, in corridor units. */
@@ -26,6 +28,10 @@ export const CREATURE_SIZE: Record<string, number> = {
   geode: 0.8,
   refractor: 1.15,
   prism: 1.8,
+  drip: 1.05,
+  subject: 0.6,
+  sleeper: 1.15,
+  incinerator: 1.0,
 };
 
 /**
@@ -62,6 +68,10 @@ export function drawCreature(
     case 'geode': drawGeode(ctx, u, fx, s); break;
     case 'refractor': drawRefractor(ctx, u, fx, s); break;
     case 'prism': drawPrism(ctx, u, fx, s); break;
+    case 'drip': drawDrip(ctx, u, fx, s); break;
+    case 'subject': drawSubject(ctx, u, fx, s); break;
+    case 'sleeper': drawSleeper(ctx, u, fx, s); break;
+    case 'incinerator': drawIncinerator(ctx, u, fx, s); break;
     default: break;
   }
 
@@ -675,4 +685,209 @@ function drawPrism(ctx: CanvasRenderingContext2D, u: number, fx: CreatureFx, s: 
   ctx.ellipse(U * 0.05, -U * 0.33, U * 0.025, U * 0.012, 0, 0, Math.PI * 2);
   ctx.fill();
   eye(ctx, 0, -U * 0.72, U * 0.05, '#ffffff', fx.t * 0.6);
+}
+
+// ------------------------------------------------------------- Drip Stand
+
+function drawDrip(ctx: CanvasRenderingContext2D, u: number, fx: CreatureFx, s: number) {
+  const w = u * 0.012;
+  const sway = Math.sin(fx.t * 1.4 + fx.seed) * u * 0.03;
+  // wheeled base: five little casters that twitch like feet
+  ctx.lineWidth = Math.max(1, u * 0.01);
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI - Math.PI;
+    const fx0 = Math.cos(a) * u * 0.22;
+    const lift = Math.max(0, Math.sin(fx.t * 6 + i * 1.3)) * u * 0.03;
+    sketchStroke(ctx, [[0, -u * 0.12], [fx0, -lift]], s + i * 3, w);
+    ctx.fillStyle = INK.void;
+    ctx.beginPath();
+    ctx.arc(fx0, -lift, u * 0.025, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // the pole
+  sketchStroke(ctx, [[0, -u * 0.12], [sway * 0.5, -u * 0.8], [sway, -u * 0.98]], s + 20, w * 1.4);
+  sketchStroke(ctx, [[sway - u * 0.14, -u * 0.96], [sway + u * 0.14, -u * 0.98]], s + 21, w);
+  // the bag, sloshing
+  const bx = sway + u * 0.02;
+  const by = -u * 0.82;
+  const bag: Pt[] = [[bx - u * 0.12, by - u * 0.12], [bx + u * 0.12, by - u * 0.12], [bx + u * 0.14, by + u * 0.08], [bx, by + u * 0.16], [bx - u * 0.14, by + u * 0.08]];
+  ctx.fillStyle = 'rgba(216,207,184,0.25)';
+  smoothPath(ctx, bag);
+  ctx.fill();
+  const level = by - u * 0.02 + Math.sin(fx.t * 3) * u * 0.02;
+  ctx.save();
+  smoothPath(ctx, bag);
+  ctx.clip();
+  ctx.fillStyle = INK.flesh;
+  ctx.fillRect(bx - u * 0.2, level, u * 0.4, u * 0.3);
+  ctx.restore();
+  sketchStroke(ctx, bag, s + 30, w, true);
+  // tube curling down to a needle it holds like a finger
+  const reach = fx.lunge * u * 0.12;
+  ctx.strokeStyle = INK.boneDim;
+  sketchStroke(ctx, [[bx, by + u * 0.16], [bx + u * 0.18, -u * 0.55], [bx + u * 0.3 + reach, -u * 0.5], [bx + u * 0.34 + reach, -u * 0.36]], s + 40, w);
+  ctx.strokeStyle = INK.bone;
+  sketchStroke(ctx, [[bx + u * 0.34 + reach, -u * 0.36], [bx + u * 0.36 + reach, -u * 0.26]], s + 41, w * 0.7);
+  eye(ctx, bx - u * 0.03, by - u * 0.04, u * 0.02, INK.sodium, fx.t);
+}
+
+// ------------------------------------------------------------- Test Subject
+
+function drawSubject(ctx: CanvasRenderingContext2D, u: number, fx: CreatureFx, s: number) {
+  const U = u * 0.6;
+  const w = u * 0.011;
+  const jitter = Math.sin(fx.t * 23 + fx.seed * 9) * U * 0.02;
+  const by = -U * 0.45 + jitter;
+  // spindly legs, ready to bolt
+  for (const side of [-1, 1]) {
+    const run = Math.sin(fx.t * 12 + side) * U * 0.06;
+    sketchStroke(ctx, [[side * U * 0.12, by + U * 0.18], [side * U * 0.32 + run, by + U * 0.3], [side * U * 0.26 + run, 0]], s + side * 7, w);
+  }
+  // hunched pale body
+  const body = sketchEllipse(0, by, U * 0.34, U * 0.26, s);
+  ctx.fillStyle = INK.bone;
+  smoothPath(ctx, body);
+  ctx.fill();
+  ctx.strokeStyle = '#3a2d2a';
+  sketchStroke(ctx, body, s + 2, w, true);
+  // ribs showing through
+  for (let i = -1; i <= 1; i++) sketchStroke(ctx, [[i * U * 0.1 - U * 0.04, by - U * 0.02], [i * U * 0.1 + U * 0.03, by + U * 0.14]], s + 10 + i, w * 0.6);
+  // head, too big, with wide wet eyes
+  const hx = U * 0.26;
+  const hy = by - U * 0.26;
+  const head = sketchEllipse(hx, hy, U * 0.2, U * 0.18, s + 20);
+  ctx.fillStyle = INK.bone;
+  smoothPath(ctx, head);
+  ctx.fill();
+  sketchStroke(ctx, head, s + 21, w, true);
+  ctx.fillStyle = INK.void;
+  ctx.beginPath();
+  ctx.ellipse(hx - U * 0.06, hy - U * 0.02, U * 0.05, U * 0.06, 0, 0, Math.PI * 2);
+  ctx.ellipse(hx + U * 0.08, hy - U * 0.02, U * 0.05, U * 0.06, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(hx - U * 0.07, hy - U * 0.05, U * 0.02, U * 0.02);
+  ctx.fillRect(hx + U * 0.07, hy - U * 0.05, U * 0.02, U * 0.02);
+  // lab collar with a blinking tag
+  ctx.strokeStyle = INK.sodium;
+  sketchStroke(ctx, [[hx - U * 0.16, hy + U * 0.14], [hx + U * 0.12, hy + U * 0.18]], s + 30, w * 1.6);
+  if (Math.sin(fx.t * 7) > 0) eye(ctx, hx - U * 0.02, hy + U * 0.2, U * 0.025, INK.toxin, 1.6);
+  ctx.strokeStyle = INK.bone;
+}
+
+// ------------------------------------------------------------- Cryo Sleeper
+
+function drawSleeper(ctx: CanvasRenderingContext2D, u: number, fx: CreatureFx, s: number) {
+  const w = u * 0.012;
+  const asleep = (fx.state ?? 0) > 0.5;
+  const pod: Pt[] = [[-u * 0.3, 0], [-u * 0.34, -u * 0.8], [-u * 0.2, -u * 1.08], [u * 0.2, -u * 1.08], [u * 0.34, -u * 0.8], [u * 0.3, 0]];
+  // the pod shell
+  ctx.fillStyle = INK.hullLit;
+  smoothPath(ctx, pod);
+  ctx.fill();
+  sketchStroke(ctx, pod, s, w, true);
+  // the figure: curled and still while asleep, uncurled and reaching when awake
+  const reach = fx.lunge * u * 0.12;
+  ctx.fillStyle = INK.fleshDark;
+  if (asleep) {
+    const curl = sketchEllipse(0, -u * 0.5 + Math.sin(fx.t * 0.5) * u * 0.005, u * 0.18, u * 0.26, s + 5);
+    smoothPath(ctx, curl);
+    ctx.fill();
+    sketchStroke(ctx, [[-u * 0.1, -u * 0.62], [u * 0.08, -u * 0.36]], s + 6, w * 0.7);
+  } else {
+    const body = sketchEllipse(0, -u * 0.55, u * 0.16, u * 0.34, s + 5);
+    smoothPath(ctx, body);
+    ctx.fill();
+    const head = sketchEllipse(0, -u * 0.95, u * 0.1, u * 0.11, s + 7);
+    smoothPath(ctx, head);
+    ctx.fill();
+    eye(ctx, -u * 0.035, -u * 0.96, u * 0.02, INK.cryo, fx.t);
+    eye(ctx, u * 0.035, -u * 0.96, u * 0.02, INK.cryo, fx.t + 1);
+    ctx.strokeStyle = INK.bone;
+    sketchStroke(ctx, [[u * 0.14, -u * 0.72], [u * 0.42 + reach, -u * 0.6], [u * 0.5 + reach, -u * 0.44]], s + 8, w * 1.3);
+    sketchStroke(ctx, [[-u * 0.14, -u * 0.72], [-u * 0.36, -u * 0.5], [-u * 0.34, -u * 0.3]], s + 9, w * 1.3);
+  }
+  // glass: frosted over while asleep, cracked open once awake
+  ctx.save();
+  smoothPath(ctx, pod);
+  ctx.clip();
+  if (asleep) {
+    ctx.fillStyle = 'rgba(159,210,228,0.42)';
+    ctx.fillRect(-u * 0.4, -u * 1.1, u * 0.8, u * 1.1);
+    ctx.strokeStyle = 'rgba(232,251,255,0.7)';
+    for (let i = 0; i < 7; i++) {
+      const x = noise(s + i) * u * 0.25;
+      const y = -u * (0.2 + 0.12 * i);
+      sketchStroke(ctx, [[x, y], [x + u * 0.06, y - u * 0.05], [x + u * 0.12, y]], s + 40 + i, w * 0.6);
+    }
+  } else {
+    ctx.strokeStyle = 'rgba(232,251,255,0.6)';
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2;
+      sketchStroke(ctx, [[0, -u * 0.6], [Math.cos(a) * u * 0.3, -u * 0.6 + Math.sin(a) * u * 0.4]], s + 50 + i, w * 0.6);
+    }
+  }
+  ctx.restore();
+  ctx.strokeStyle = INK.bone;
+  // status light
+  eye(ctx, u * 0.22, -u * 0.2, u * 0.025, asleep ? INK.cryo : INK.flesh, fx.t * 2);
+}
+
+// ------------------------------------------------------------- Incinerator Unit
+
+function drawIncinerator(ctx: CanvasRenderingContext2D, u: number, fx: CreatureFx, s: number) {
+  const w = u * 0.012;
+  const heat = Math.max(0, Math.min(1, fx.state ?? 0));
+  const shake = heat > 0.6 ? Math.sin(fx.t * 40) * u * 0.01 * heat : 0;
+  ctx.translate(shake, 0);
+  // treads
+  const tread: Pt[] = [[-u * 0.42, -u * 0.02], [-u * 0.46, -u * 0.12], [u * 0.46, -u * 0.12], [u * 0.42, -u * 0.02]];
+  ctx.fillStyle = INK.void;
+  fillPoly(ctx, tread);
+  sketchStroke(ctx, tread, s, w, true);
+  for (let i = 0; i < 7; i++) {
+    const x = -u * 0.4 + ((i * u * 0.13 + fx.t * u * 0.05) % (u * 0.8));
+    sketchStroke(ctx, [[x, -u * 0.11], [x, -u * 0.03]], s + i, w * 0.6);
+  }
+  // furnace body
+  const body: Pt[] = [[-u * 0.36, -u * 0.12], [-u * 0.34, -u * 0.72], [u * 0.34, -u * 0.74], [u * 0.36, -u * 0.12]];
+  ctx.fillStyle = INK.rust;
+  fillPoly(ctx, body);
+  sketchStroke(ctx, body, s + 10, w, true);
+  // chimney with smoke
+  const chim: Pt[] = [[u * 0.12, -u * 0.74], [u * 0.14, -u * 0.98], [u * 0.26, -u * 0.98], [u * 0.26, -u * 0.74]];
+  ctx.fillStyle = INK.hullLit;
+  fillPoly(ctx, chim);
+  sketchStroke(ctx, chim, s + 11, w, true);
+  for (let i = 0; i < 3; i++) {
+    const ph = (fx.t * 0.7 + i / 3) % 1;
+    ctx.fillStyle = `rgba(90,85,78,${0.5 * (1 - ph)})`;
+    ctx.beginPath();
+    ctx.arc(u * 0.2 + Math.sin(ph * 5 + i) * u * 0.05, -u * 1.0 - ph * u * 0.5, u * (0.05 + ph * 0.08), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // the grille: glows hotter every round
+  const gx = -u * 0.2;
+  const gy = -u * 0.56;
+  const glow = ctx.createRadialGradient(gx + u * 0.12, gy + u * 0.14, 0, gx + u * 0.12, gy + u * 0.14, u * (0.25 + 0.3 * heat));
+  glow.addColorStop(0, `rgba(255,${Math.round(200 - 120 * heat)},60,${0.35 + 0.6 * heat})`);
+  glow.addColorStop(1, 'rgba(255,120,40,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(gx - u * 0.3, gy - u * 0.3, u * 0.84, u * 0.84);
+  ctx.fillStyle = INK.void;
+  ctx.fillRect(gx, gy, u * 0.24, u * 0.28);
+  ctx.fillStyle = `rgba(227,163,59,${0.4 + 0.6 * heat})`;
+  for (let i = 0; i < 4; i++) ctx.fillRect(gx + u * 0.02, gy + u * (0.03 + i * 0.065), u * 0.2, u * 0.03);
+  // gauge needle creeping to red
+  ctx.fillStyle = INK.bone;
+  ctx.beginPath();
+  ctx.arc(u * 0.2, -u * 0.46, u * 0.07, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = INK.flesh;
+  const a = Math.PI * (0.8 + 1.4 * heat);
+  sketchStroke(ctx, [[u * 0.2, -u * 0.46], [u * 0.2 + Math.cos(a) * u * 0.06, -u * 0.46 + Math.sin(a) * u * 0.06]], s + 30, w);
+  ctx.strokeStyle = INK.bone;
+  // a stubby arm with a vent nozzle
+  const reach = fx.lunge * u * 0.1;
+  sketchStroke(ctx, [[-u * 0.36, -u * 0.4], [-u * 0.52 - reach, -u * 0.36], [-u * 0.56 - reach, -u * 0.28]], s + 40, w * 1.4);
 }

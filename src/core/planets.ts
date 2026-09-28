@@ -35,12 +35,13 @@ export const PLANETS: Record<string, PlanetDef> = {
   derelict: {
     id: 'derelict', name: 'The Derelict', pitch: 'The lab ship. Where every print begins.',
     packs: {
-      safe: [['tick'], ['copy'], ['tick', 'tick']],
-      wild: [['copy', 'tick'], ['husk'], ['drone'], ['bloom'], ['drone', 'tick']],
-      deep: [['husk', 'drone'], ['copy', 'copy'], ['bloom', 'tick', 'tick'], ['husk', 'bloom'], ['drone', 'drone']],
-      lair: [['husk', 'drone'], ['copy', 'bloom']],
+      safe: [['tick'], ['copy'], ['tick', 'tick'], ['subject'], ['drip', 'tick']],
+      wild: [['copy', 'tick'], ['husk'], ['drone'], ['bloom'], ['drone', 'tick'], ['drip', 'copy'], ['subject'], ['drip', 'husk']],
+      deep: [['husk', 'drone'], ['copy', 'copy'], ['bloom', 'tick', 'tick'], ['husk', 'bloom'], ['drone', 'drone'],
+        ['incinerator', 'husk'], ['incinerator', 'drone'], ['sleeper'], ['sleeper', 'drip']],
+      lair: [['husk', 'drone'], ['copy', 'bloom'], ['incinerator', 'copy']],
     },
-    ambush: [['tick', 'tick'], ['husk'], ['tick', 'copy']],
+    ambush: [['tick', 'tick'], ['husk'], ['tick', 'copy'], ['sleeper']],
     ambushText: 'Something drops out of a vent!',
     elites: [['hollow'], ['choir']],
     nest: ['tick', 'tick'],

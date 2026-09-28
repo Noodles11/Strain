@@ -32,6 +32,15 @@ export interface Foe {
   split?: boolean;
   /** Arrived mid-fight: skips its first enemy turn. */
   sick?: boolean;
+  /** Left the fight (ran, or blew itself up): no corpse. */
+  fled?: boolean;
+  /** Its own turns taken (flee timer). */
+  acted?: number;
+  /** Cryo Sleeper: still dormant; rounds slept. */
+  asleep?: boolean;
+  slept?: number;
+  /** Incinerator: heat so far. */
+  heat?: number;
 }
 
 export interface BattlePlayer {
@@ -57,7 +66,8 @@ export type BattleEv =
   /** A card is played: the view animates its attack or effect. */
   | { k: 'card'; id: string; target?: number; hits: number }
   /** An enemy attacks: the view animates the blow. */
-  | { k: 'strike'; uid: number; hits: number };
+  | { k: 'strike'; uid: number; hits: number }
+  | { k: 'healFoe'; uid: number; n: number };
 
 export interface BattleState {
   foes: Foe[];
@@ -137,7 +147,11 @@ export function effTraits(s: BattleState): Traits {
 export function makeFoe(id: string, tier: number, uid: number, hpMul: number): Foe {
   const def = ENEMIES[id];
   const hp = Math.round(def.hp * hpMul);
-  return { uid, id, hp, maxHp: hp, plate: 0, strength: 0, weak: 0, expose: 0, tag: 0, intentIdx: 0, alive: true, phase2: false, tier };
+  const f: Foe = { uid, id, hp, maxHp: hp, plate: 0, strength: 0, weak: 0, expose: 0, tag: 0, intentIdx: 0, alive: true, phase2: false, tier };
+  if (def.sleeps) { f.asleep = true; f.slept = 0; f.plate = def.sleeps.plate + tier; }
+  if (def.countdown) f.heat = 0;
+  if (def.fleesAfter) f.acted = 0;
+  return f;
 }
 
 export function startBattle(setup: BattleSetup, rng: Rng, tierBonus: number, hpMul: number): { s: BattleState; ev: BattleEv[] } {
@@ -180,6 +194,7 @@ export function startBattle(setup: BattleSetup, rng: Rng, tierBonus: number, hpM
   };
   if (s.mods.tagStart && foes[0]) foes[0].tag += s.mods.tagStart;
   const ev: BattleEv[] = [];
+  if (s.ambush) for (const f of foes) if (f.asleep) { f.asleep = false; f.plate = 0; }
   const names = foes.map(NAME);
   if (s.ambush) ev.push({ k: 'text', s: `AMBUSH! ${names.join(' and ')} ${names.length > 1 ? 'drop' : 'drops'} on you!` });
   else if (foes.some((f) => ENEMIES[f.id].rank === 'boss')) ev.push({ k: 'text', s: `${names[0]} rises to meet you.` });
@@ -422,7 +437,11 @@ function hitFoe(s: BattleState, f: Foe, raw: number, ev: BattleEv[]): number {
   f.hp -= d;
   ev.push({ k: 'hitFoe', uid: f.uid, n: lost }, { k: 'text', s: d > 0 ? `${NAME(f)} takes ${d}.` : `${NAME(f)}'s plating holds.` });
   if (f.hp <= 0) killFoe(s, f, ev);
-  else checkPhase(s, f, ev);
+  else {
+    checkPhase(s, f, ev);
+    const sl = ENEMIES[f.id].sleeps;
+    if (f.asleep && sl && f.hp <= f.maxHp * sl.wakeBelow) wake(f, ev, 'cracks out of the ice');
+  }
   if (reflect > 0 && s.player.hp > 0) {
     const lost = hpLost(s.player.hp, reflect);
     s.player.hp -= reflect;
@@ -431,6 +450,28 @@ function hitFoe(s: BattleState, f: Foe, raw: number, ev: BattleEv[]): number {
     if (s.player.hp <= 0) { s.player.hp = 0; s.phase = 'lost'; ev.push({ k: 'text', s: 'Your print fails.' }); }
   }
   return d;
+}
+
+function wake(f: Foe, ev: BattleEv[], how: string) {
+  f.asleep = false;
+  f.intentIdx = 0;
+  ev.push({ k: 'status', who: f.uid }, { k: 'text', s: `${NAME(f)} ${how}!` });
+}
+
+/** The Incinerator's last act: a blast that ignores plating, and it's gone. */
+function explode(s: BattleState, f: Foe, ev: BattleEv[]) {
+  const def = ENEMIES[f.id];
+  let d = def.countdown!.blast + 2 * f.tier;
+  if (f.weak > 0) d = Math.floor(d * 0.75);
+  if (s.player.expose > 0) d = Math.floor(d * 1.5);
+  ev.push({ k: 'act', uid: f.uid }, { k: 'text', s: `${NAME(f)} goes critical!` }, { k: 'strike', uid: f.uid, hits: 1 });
+  const lost = hpLost(s.player.hp, d);
+  s.player.hp -= d;
+  s.lostHp = true;
+  ev.push({ k: 'hitPlayer', n: lost }, { k: 'text', s: `The blast goes straight through your plating. You take ${d}.` });
+  f.alive = false;
+  f.fled = true;
+  ev.push({ k: 'die', uid: f.uid });
 }
 
 /** HP a hit actually removes: overkill past zero doesn't count, so displays never bounce back up. */
@@ -534,17 +575,18 @@ export function endTurn(s: BattleState, rng: Rng): BattleEv[] {
   return ev;
 }
 
-export function currentIntent(f: Foe): Intent {
+export function currentIntent(f: Foe, s?: BattleState): Intent {
   const def = ENEMIES[f.id];
-  const pat = f.phase2 && def.phase2 ? def.phase2.pattern : def.pattern;
+  const alone = !!s && def.soloPattern && !aliveFoes(s).some((o) => o !== f);
+  const pat = alone ? def.soloPattern! : f.phase2 && def.phase2 ? def.phase2.pattern : def.pattern;
   return pat[f.intentIdx % pat.length];
 }
 
 /** Final numbers of a foe's next move, before your plating. */
-export function intentNumbers(s: BattleState, f: Foe): { attack: number; hits: number; plate: number; weak: number; expose: number; strength: number; summon?: string; ally: number; label: string } {
+export function intentNumbers(s: BattleState, f: Foe): { attack: number; hits: number; plate: number; weak: number; expose: number; strength: number; summon?: string; ally: number; healAlly: number; label: string } {
   const def: EnemyDef = ENEMIES[f.id];
-  if (f.sick) return { label: 'Summoned', attack: 0, hits: 1, plate: 0, weak: 0, expose: 0, strength: 0, ally: 0 };
-  const it = currentIntent(f);
+  if (f.sick || f.asleep) return { label: f.asleep ? 'Asleep' : 'Summoned', attack: 0, hits: 1, plate: 0, weak: 0, expose: 0, strength: 0, ally: 0, healAlly: 0 };
+  const it = currentIntent(f, s);
   let attack = 0;
   if (it.attack !== undefined) {
     attack = it.attack + def.might + f.tier + f.strength;
@@ -562,12 +604,13 @@ export function intentNumbers(s: BattleState, f: Foe): { attack: number; hits: n
     strength: it.strength ?? 0,
     summon: it.summon,
     ally: it.allyStrength ?? 0,
+    healAlly: it.healAlly ? it.healAlly + Math.floor(will / 2) : 0,
   };
 }
 
 function enemyTurn(s: BattleState, rng: Rng, ev: BattleEv[]) {
   void rng;
-  for (const f of aliveFoes(s)) f.plate = 0;
+  for (const f of aliveFoes(s)) if (!f.asleep) f.plate = 0;
   if (s.firstStrike) s.firstStrike = false;
   for (const f of [...aliveFoes(s)]) {
     if (s.phase !== 'player') break;
@@ -579,8 +622,24 @@ function enemyTurn(s: BattleState, rng: Rng, ev: BattleEv[]) {
       continue;
     }
     const def = ENEMIES[f.id];
+    if (f.asleep && def.sleeps) {
+      f.slept = (f.slept ?? 0) + 1;
+      if (f.slept >= def.sleeps.wakeAfter) wake(f, ev, 'stirs awake');
+      else ev.push({ k: 'text', s: `${NAME(f)} sleeps behind the frost.` });
+      continue;
+    }
+    if (def.countdown && (f.heat ?? 0) + 1 >= def.countdown.at) {
+      explode(s, f, ev);
+      if (s.player.hp <= 0) {
+        s.player.hp = 0;
+        s.phase = 'lost';
+        ev.push({ k: 'text', s: 'Your print fails.' });
+        return;
+      }
+      continue;
+    }
     const n = intentNumbers(s, f);
-    const it = currentIntent(f);
+    const it = currentIntent(f, s);
     ev.push({ k: 'act', uid: f.uid }, { k: 'text', s: `${NAME(f)} uses ${n.label.toUpperCase()}!` });
     if (it.line) ev.push({ k: 'text', s: it.line });
     if (n.plate) { f.plate += n.plate; ev.push({ k: 'plate', who: f.uid }); }
@@ -588,6 +647,14 @@ function enemyTurn(s: BattleState, rng: Rng, ev: BattleEv[]) {
     if (it.allyStrength) {
       for (const o of aliveFoes(s)) if (o !== f) o.strength += it.allyStrength;
       ev.push({ k: 'text', s: 'The others grow stronger.' });
+    }
+    if (n.healAlly) {
+      const hurt = aliveFoes(s).filter((o) => o !== f && o.hp < o.maxHp).sort((a, b) => (b.maxHp - b.hp) - (a.maxHp - a.hp))[0];
+      if (hurt) {
+        const got = Math.min(n.healAlly, hurt.maxHp - hurt.hp);
+        hurt.hp += got;
+        ev.push({ k: 'healFoe', uid: hurt.uid, n: got }, { k: 'text', s: `${NAME(hurt)} is patched up. +${got}.` });
+      } else ev.push({ k: 'text', s: 'Nothing to patch up.' });
     }
     if (n.weak) { s.player.weak += n.weak; ev.push({ k: 'status', who: 'p' }, { k: 'text', s: 'You are Weak.' }); }
     if (n.expose) { s.player.expose += n.expose; ev.push({ k: 'status', who: 'p' }, { k: 'text', s: 'You are Exposed.' }); }
@@ -622,6 +689,18 @@ function enemyTurn(s: BattleState, rng: Rng, ev: BattleEv[]) {
       }
     }
     f.intentIdx += 1;
+    if (def.countdown && f.alive) {
+      f.heat = (f.heat ?? 0) + 1;
+      ev.push({ k: 'text', s: `${NAME(f)} heats up. ${def.countdown.at - f.heat} to go.` });
+    }
+    if (def.fleesAfter && f.alive) {
+      f.acted = (f.acted ?? 0) + 1;
+      if (f.acted >= def.fleesAfter) {
+        f.alive = false;
+        f.fled = true;
+        ev.push({ k: 'die', uid: f.uid }, { k: 'text', s: `${NAME(f)} bolts into the vents!` });
+      }
+    }
     if (s.player.hp <= 0) {
       s.player.hp = 0;
       s.phase = 'lost';

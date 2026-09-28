@@ -471,7 +471,7 @@ export class WorldView {
     }
     const ambushed = m.kind === 'ambush';
     if (ambushed) ctx.globalAlpha = 0.45 + 0.2 * Math.sin(t * 5);
-    drawCreature(ctx, id, cx, fy, u, { t: t + m.id, boil: Math.floor(t * 6) * 3, flash: 0, lunge: 0, dead: 0, seed: (m.id % 97) / 97, dim: 0 });
+    drawCreature(ctx, id, cx, fy, u, { t: t + m.id, boil: Math.floor(t * 6) * 3, flash: 0, lunge: 0, dead: 0, seed: (m.id % 97) / 97, dim: 0, state: id === 'sleeper' ? 1 : 0 });
     ctx.globalAlpha = 1;
     if (m.foes.length > 1) {
       ctx.fillStyle = INK.void;

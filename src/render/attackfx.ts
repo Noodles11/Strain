@@ -21,6 +21,7 @@ const CARD_FX: Record<string, FxKind> = {
 const ENEMY_FX: Record<string, FxKind> = {
   drone: 'bolt', prism: 'beam', choir: 'beam', geode: 'beam', refractor: 'beam',
   tick: 'bite', shardling: 'bite', bloom: 'slam', husk: 'slam', crawler: 'slam', first: 'slam',
+  drip: 'dart', subject: 'bite', sleeper: 'slam', incinerator: 'bolt',
 };
 
 export function cardFx(id: string): FxKind {

@@ -527,6 +527,20 @@ function moveMobs(r: RunState) {
       if (!m.alive || (m.kind !== 'pack' && m.kind !== 'spawn')) continue;
       const dist = Math.abs(m.x - r.x) + Math.abs(m.y - r.y);
       const vis = mobVision(r) - (isDark(r, m.x, m.y) ? 2 : 0);
+      const runner = m.foes.length === 1 && ENEMIES[m.foes[0]].fleesAfter !== undefined;
+      if (runner && dist <= Math.max(2, vis + 1)) {
+        // skittish: it backs away from the clone instead of closing in
+        let best: [number, number] | null = null;
+        let bestD = dist;
+        for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]] as [number, number][]) {
+          const nx = m.x + dx;
+          const ny = m.y + dy;
+          const nd = Math.abs(nx - r.x) + Math.abs(ny - r.y);
+          if (nd > bestD && walkable(r, nx, ny) && !mobAt(r, nx, ny) && Math.abs(nx - m.hx) + Math.abs(ny - m.hy) <= 6) { bestD = nd; best = [dx, dy]; }
+        }
+        if (best && rng.next() < 0.7) { m.x += best[0]; m.y += best[1]; }
+        continue;
+      }
       if (m.chaser && !m.alerted && dist <= Math.max(1, vis)) m.alerted = true;
       if (m.alerted && Math.abs(m.x - m.hx) + Math.abs(m.y - m.hy) > 14) m.alerted = false;
       let dir: [number, number] | null = null;
@@ -678,11 +692,14 @@ function afterBattleOp(r: RunState) {
   }
   // won
   r.oxygen = Math.min(maxO2(r), r.oxygen + 2 + (r.hp > maxHp(r) / 2 ? mods(r).winO2 : 0));
-  const kills = b.foes.length;
+  // runners that got away and units that blew themselves up leave nothing behind
+  const killed = b.foes.filter((f) => !f.fled);
+  const kills = killed.length;
   r.stats.kills += kills;
   let mult = ctx.reward ? 1 : 0.5;
   if (ctx.ambush) mult *= 1.5;
-  r.loot = b.foes.map((f) => ({ id: f.id, tagged: f.tag > 0, mult }));
+  r.loot = killed.map((f) => ({ id: f.id, tagged: f.tag > 0, mult }));
+  const bonus = killed.reduce((a, f) => a + (ENEMIES[f.id].bonusCodons ?? 0), 0);
   let codons = 0;
   let options: string[] = [];
   let biomass = 0;
@@ -710,7 +727,7 @@ function afterBattleOp(r: RunState) {
       const got = addImplant(r, 'random');
       if (got) title = `Elite remains · ${IMPLANTS[got].name} implanted`;
     } else if (ctx.reward) {
-      codons = kills * KILL_CODONS;
+      codons = kills * KILL_CODONS + bonus;
       options = offerCards(r, 'tac');
       title = 'Something useful';
     }
@@ -718,6 +735,14 @@ function afterBattleOp(r: RunState) {
   r.codons += codons;
   r.biomass += biomass;
   r.reward = options.length || codons || biomass ? { title, options, deck: 'tac', biomass, codons } : undefined;
+  if (kills === 0 && ctx.kind !== 'boss') {
+    // nothing to eat or render: it all got away
+    say(r, 'Nothing left to take.');
+    r.loot = [];
+    r.mode = 'loot';
+    lootDone(r);
+    return;
+  }
   r.mode = 'loot';
 }
 

@@ -14,6 +14,8 @@ export interface Intent {
   summon?: string;
   /** Strength given to every other living enemy. */
   allyStrength?: number;
+  /** Heal the most hurt other enemy by this much (plus Will). */
+  healAlly?: number;
   line?: string;
 }
 
@@ -34,6 +36,16 @@ export interface EnemyDef {
   splits?: boolean;
   /** While plated, this share of every hit comes back at you, through plating. */
   reflect?: number;
+  /** Pattern used when it is the last one standing. */
+  soloPattern?: Intent[];
+  /** Leaves the fight after this many of its own turns: no corpse, no loot. */
+  fleesAfter?: number;
+  /** Starts asleep behind plating; wakes below a share of HP or after some rounds. */
+  sleeps?: { plate: number; wakeBelow: number; wakeAfter: number };
+  /** Heats up each of its turns; at `at` it explodes for `blast`, ignoring plating, and is gone. */
+  countdown?: { at: number; blast: number };
+  /** Extra Codons for killing it. */
+  bonusCodons?: number;
 }
 
 export const ENEMIES: Record<string, EnemyDef> = {
@@ -120,6 +132,44 @@ export const ENEMIES: Record<string, EnemyDef> = {
         { label: 'Cascade', attack: 6, hits: 2 },
       ],
     },
+  },
+
+  // ---- Lab additions ----
+  drip: {
+    id: 'drip', name: 'Drip Stand', hp: 12, biomass: 3, might: 1, hide: 0, speed: 2, will: 1,
+    flavor: 'An IV stand that learned to walk on its own tubing. It keeps the others topped up.',
+    pattern: [
+      { label: 'Transfuse', healAlly: 5 },
+      { label: 'Needle', attack: 3 },
+      { label: 'Transfuse', healAlly: 5 },
+    ],
+    soloPattern: [{ label: 'Needle', attack: 3 }],
+  },
+  subject: {
+    id: 'subject', name: 'Test Subject', hp: 10, biomass: 8, might: 1, hide: 0, speed: 8, will: 0, fleesAfter: 2, bonusCodons: 2,
+    flavor: 'Half-printed, still wearing its collar. It does not want to be here either.',
+    pattern: [
+      { label: 'Snap', attack: 2 },
+      { label: 'Scramble', attack: 2 },
+    ],
+  },
+  sleeper: {
+    id: 'sleeper', name: 'Cryo Sleeper', hp: 34, biomass: 8, might: 4, hide: 1, speed: 2, will: 2,
+    sleeps: { plate: 3, wakeBelow: 0.5, wakeAfter: 3 },
+    flavor: 'Frozen mid-print. Whatever is inside has been dreaming about you.',
+    pattern: [
+      { label: 'Thaw', plate: 3, strength: 2, line: 'the ice runs off it in sheets' },
+      { label: 'Crush', attack: 12 },
+    ],
+  },
+  incinerator: {
+    id: 'incinerator', name: 'Incinerator Unit', hp: 28, biomass: 6, might: 4, hide: 1, speed: 3, will: 1,
+    countdown: { at: 4, blast: 20 },
+    flavor: 'Waste disposal on treads. It is disposing of itself, and you are in the way.',
+    pattern: [
+      { label: 'Vent', attack: 2 },
+      { label: 'Stoke', plate: 1 },
+    ],
   },
 
   // ---- Kessra, the Glass Caves ----

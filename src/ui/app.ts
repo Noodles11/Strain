@@ -458,6 +458,7 @@ export class App {
     for (let i = ev.length - 1; i >= 0; i--) {
       const e = ev[i];
       if (e.k === 'hitFoe') this.dispFoe.set(e.uid, (this.dispFoe.get(e.uid) ?? 0) + e.n);
+      if (e.k === 'healFoe') this.dispFoe.set(e.uid, (this.dispFoe.get(e.uid) ?? 0) - e.n);
       if (e.k === 'hitPlayer') this.dispP += e.n;
       if (e.k === 'heal') this.dispP -= e.n;
       if (e.k === 'summon') this.hidden.add(e.uid);
@@ -471,9 +472,26 @@ export class App {
   /** A foe's next move, with its attack already cut down by your plating (4×2 into 5 plate reads 0×2). */
   private intentHtml(b: NonNullable<RunState['battle']>, f: NonNullable<RunState['battle']>['foes'][number]): string {
     if (f.sick) return 'SUMMONED';
+    const def = ENEMIES[f.id];
+    if (f.asleep && def.sleeps) {
+      const left = def.sleeps.wakeAfter - (f.slept ?? 0);
+      return `ASLEEP · wakes in ${left}`;
+    }
+    if (def.countdown) {
+      const left = def.countdown.at - (f.heat ?? 0);
+      if (left <= 1) {
+        let d = def.countdown.blast + 2 * f.tier;
+        if (f.weak > 0) d = Math.floor(d * 0.75);
+        if (b.player.expose > 0) d = Math.floor(d * 1.5);
+        return `<span class="atk">BLAST&nbsp;${icon('dmg')}${d}</span> through plating`;
+      }
+    }
     const n = intentNumbers(b, f);
     const parts: string[] = [];
-    if (currentIntent(f).attack !== undefined) {
+    if (def.countdown) parts.push(`BLOWS IN ${def.countdown.at - (f.heat ?? 0)}`);
+    if (def.fleesAfter) parts.push(`FLEES IN ${def.fleesAfter - (f.acted ?? 0)}`);
+    if (n.healAlly) parts.push(`${icon('heal')}${n.healAlly} ally`);
+    if (currentIntent(f, b).attack !== undefined) {
       const hit = Math.max(0, n.attack - b.player.plate);
       const cut = hit < n.attack ? ` <s>${n.attack}</s>` : '';
       parts.push(`<span class="atk">${icon('dmg')}${hit}${n.hits > 1 ? `×${n.hits}` : ''}${cut}</span>`);
@@ -498,6 +516,7 @@ export class App {
       case 'text': this.lines.push(e.s); if (this.lines.length > 2) this.lines.shift(); break;
       case 'hitFoe': this.dispFoe.set(e.uid, (this.dispFoe.get(e.uid) ?? 0) - e.n); this.bv.anim(e.uid).flash = 1; break;
       case 'hitPlayer': this.dispP -= e.n; this.bv.player.flash = e.n > 0 ? 1 : 0.3; this.bv.shake = e.n > 0 ? Math.min(1, 0.3 + e.n / 20) : 0; break;
+      case 'healFoe': this.dispFoe.set(e.uid, (this.dispFoe.get(e.uid) ?? 0) + e.n); break;
       case 'act': this.bv.anim(e.uid).lunge = 1; this.actedSoon(e.uid); break;
       case 'die': this.bv.anim(e.uid).dead = 0.01; break;
       case 'heal': this.dispP += e.n; this.bv.player.heal = 1; break;
