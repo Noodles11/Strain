@@ -2,9 +2,9 @@ import { CREATURE_SIZE, drawCreature } from './creatures';
 import { drawCloneTop } from './clone';
 import { INK } from './palette';
 import { noise } from './sketch';
-import { theme } from './theme';
+import { SNOW, SNOW_SHADE, snowAt, theme } from './theme';
 import { inStorm, inView, isDark, type RunState } from '../core/run';
-import { gateAt, idx, T_GATE, T_HAZARD, T_WALL, type Mob, type Poi } from '../world/gen';
+import { gateAt, idx, T_FLOOR, T_GATE, T_HAZARD, T_WALL, type Mob, type Poi } from '../world/gen';
 
 
 export const TILES_ACROSS = 11;
@@ -90,10 +90,28 @@ export class WorldView {
         const Y = this.sy(y);
         ctx.fillStyle = th.floor;
         ctx.fillRect(X, Y, T + 0.5, T + 0.5);
-        ctx.strokeStyle = th.floorLine;
-        ctx.lineWidth = 1;
-        ctx.strokeRect(X + 1.5, Y + 1.5, T - 3, T - 3);
-        if ((x * 7 + y * 13) % 5 === 0) {
+        if (th.solidFloor || th.snow) {
+          if (th.snow && tile === T_FLOOR) {
+            for (const s of snowAt(x, y)) {
+              const sx = X + s.ox * T;
+              const sy = Y + s.oy * T;
+              ctx.fillStyle = SNOW_SHADE;
+              ctx.beginPath();
+              ctx.ellipse(sx, sy + s.r * T * 0.15, s.r * T, s.r * T * 0.8, 0, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.fillStyle = SNOW;
+              ctx.beginPath();
+              ctx.ellipse(sx - s.r * T * 0.12, sy - s.r * T * 0.1, s.r * T * 0.75, s.r * T * 0.6, 0, 0, Math.PI * 2);
+              ctx.fill();
+            }
+          }
+        }
+        if (!th.solidFloor) {
+          ctx.strokeStyle = th.floorLine;
+          ctx.lineWidth = 1;
+          ctx.strokeRect(X + 1.5, Y + 1.5, T - 3, T - 3);
+        }
+        if (!th.solidFloor && (x * 7 + y * 13) % 5 === 0) {
           ctx.fillStyle = th.floorLine;
           ctx.fillRect(X + 4, Y + 4, 2, 2);
           ctx.fillRect(X + T - 6, Y + T - 6, 2, 2);

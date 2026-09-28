@@ -42,6 +42,7 @@ The bot never explores for cards, so all-3 losses are expected; a player who exp
 - Run: Derelict (landing 1, tier 1) → star chart → Kessra (landing 2, tier 2). You can also go home from the chart and bank.
 - The Derelict's boss reveals Kessra for this run and for good; Kessra's boss reveals Mireth and Orun (not built yet).
 - Landing refuels: full oxygen, +30% integrity, exploration hand refilled. Decks, implants and somatic points carry over.
+- Kessra floor is one solid teal surface (no tile grid) with decorative snow drifts on about one tile in five, on the map and in battle.
 - Kessra maps are 52×52, darker (45% of sections start dark), with shard-floor hazards and crystal debris.
 - Elites on Kessra offer only Kessra cards; regular rewards weigh Kessra cards double.
 

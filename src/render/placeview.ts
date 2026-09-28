@@ -1,8 +1,8 @@
 import { INK } from './palette';
 import { noise } from './sketch';
-import type { Theme } from './theme';
+import { SNOW, SNOW_SHADE, snowAt, type Theme } from './theme';
 import { isDark, inStorm, type RunState } from '../core/run';
-import { gateAt, idx, T_GATE, T_HAZARD, T_WALL, type World } from '../world/gen';
+import { gateAt, idx, T_FLOOR, T_GATE, T_HAZARD, T_WALL, type World } from '../world/gen';
 
 /** Where a fight happens: the clone's tile and the direction it faces (toward the foe). */
 export interface FightAt {
@@ -225,6 +225,12 @@ export class PlaceView {
           continue;
         }
         floors.push({ d: c.d, draw: () => this.floor(ctx, x, y, tile === T_HAZARD ? th.hazard : null, th, t) });
+        if (th.snow && tile === T_FLOOR && !keep.has(i)) {
+          for (const s of snowAt(x, y)) {
+            const sd = this.toCam(x + s.ox, y + s.oy, 0).d;
+            solids.push({ d: sd, draw: () => this.drift(ctx, x + s.ox, y + s.oy, s.r, th) });
+          }
+        }
         if (this.hc < wallH) floors.push({ d: c.d, draw: () => this.ceiling(ctx, x, y, wallH, th) });
         if (tile === T_GATE) {
           const g = gateAt(w, x, y)!;
@@ -294,7 +300,8 @@ export class PlaceView {
     ctx.fillStyle = th.floor;
     poly(ctx, q);
     ctx.fill();
-    ctx.strokeStyle = th.floorLine;
+    // a solid floor strokes in its own colour, which also hides the seams between tiles
+    ctx.strokeStyle = th.solidFloor ? th.floor : th.floorLine;
     ctx.lineWidth = 1;
     ctx.stroke();
     if (hazard) {
@@ -306,6 +313,25 @@ export class PlaceView {
       ctx.restore();
     }
     this.fogOver(ctx, q, d, th);
+  }
+
+  /** A low snow drift: stacked rings, each smaller and brighter, so it reads as a mound. */
+  private drift(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, th: Theme) {
+    const layers: [number, number, string][] = [[0, 1, SNOW_SHADE], [0.35, 0.75, SNOW], [0.6, 0.45, SNOW]];
+    for (const [hz, rr, col] of layers) {
+      const ring: [number, number, number][] = [];
+      for (let i = 0; i < 10; i++) {
+        const a = (i / 10) * Math.PI * 2;
+        const wob = 1 + 0.12 * Math.sin(a * 3 + cx * 5 + cy * 3);
+        ring.push([cx + Math.cos(a) * r * rr * wob, cy + Math.sin(a) * r * rr * wob, hz * r * 0.8]);
+      }
+      const q = this.projPoly(ring);
+      if (!q) return;
+      ctx.fillStyle = col;
+      poly(ctx, q);
+      ctx.fill();
+      this.fogOver(ctx, q, this.far(cx, cy), th);
+    }
   }
 
   /** The ceiling over open ground: plain dark panels. */
