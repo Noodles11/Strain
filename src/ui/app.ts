@@ -526,14 +526,15 @@ export class App {
     if (def.fleesAfter) parts.push(`FLEES IN ${def.fleesAfter - (f.acted ?? 0)}`);
     if (n.healAlly) parts.push(`${icon('heal')}${n.healAlly} ally`);
     if (currentIntent(f, b).attack !== undefined) {
-      const hit = Math.max(0, n.attack - b.player.plate);
+      const hit = n.pierce ? n.attack : Math.max(0, n.attack - b.player.plate);
       const cut = hit < n.attack ? ` <s>${n.attack}</s>` : '';
-      parts.push(`<span class="atk">${icon('dmg')}${hit}${n.hits > 1 ? `×${n.hits}` : ''}${cut}</span>`);
+      parts.push(`<span class="atk">${icon('dmg')}${hit}${n.hits > 1 ? `×${n.hits}` : ''}${cut}${n.pierce ? '<small>&nbsp;pierce</small>' : ''}${n.drain ? icon('drain') : ''}</span>`);
     }
     if (n.plate) parts.push(`${icon('plate')}${n.plate}`);
     if (n.strength) parts.push(`${icon('empower')}${n.strength}`);
     if (n.weak) parts.push(`${icon('weak')}${n.weak}`);
     if (n.expose) parts.push(`${icon('expose')}${n.expose}`);
+    if (n.rot) parts.push(`${icon('rot')}${n.rot}`);
     if (n.summon) parts.push('SUMMON');
     if (n.ally) parts.push(`${icon('all')}${icon('empower')}${n.ally}`);
     return parts.join(' ') || esc(n.label);
@@ -722,6 +723,7 @@ export class App {
           f.weak ? `${icon('weak')}${f.weak}` : '',
           f.expose ? `${icon('expose')}${f.expose}` : '',
           f.tag ? `${icon('tag')}${f.tag}` : '',
+          f.rot ? `${icon('rot')}${f.rot}` : '',
         ].filter(Boolean);
         return `<div class="unit ${gone ? 'gone' : ''}" data-f="${f.uid}">
           <div class="plate ${f.uid === tgt && aliveFoes(b).length > 1 ? 'tgt' : ''}">
@@ -744,6 +746,7 @@ export class App {
         p.keep ? `${icon('plate')}${p.keep}<small>↻</small>` : '',
         p.weak ? `${icon('weak')}${p.weak}` : '',
         p.expose ? `${icon('expose')}${p.expose}` : '',
+        p.rot ? `${icon('rot')}${p.rot}` : '',
         b.empower ? `${icon('empower')}${b.empower}` : '',
         b.triage ? `${icon('triage')}${b.triage}` : '',
         ...TRAITS.filter((k) => b.surge[k]).map((k) => `<b class="${k}">${TRAIT_INFO[k].short}${b.surge[k] > 0 ? '+' : ''}${b.surge[k]}</b>`),

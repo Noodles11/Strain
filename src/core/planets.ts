@@ -1,4 +1,4 @@
-import { DERELICT_EVENTS, KESSRA_EVENTS, type EventDef } from './events';
+import { DERELICT_EVENTS, KESSRA_EVENTS, MIRETH_EVENTS, type EventDef } from './events';
 
 export type RingPacks = Record<'safe' | 'wild' | 'deep' | 'lair', string[][]>;
 
@@ -80,9 +80,27 @@ export const PLANETS: Record<string, PlanetDef> = {
     reveals: ['mireth', 'orun'],
   },
   mireth: {
-    id: 'mireth', name: 'Mireth', pitch: 'The Drowned Forest. Signal lost.', locked: true,
-    packs: { safe: [], wild: [], deep: [], lair: [] }, ambush: [], ambushText: '', elites: [], nest: [], boss: [], bossName: '',
-    cards: [], events: [], dark: 0, hazard: 0, hazardText: '', reveals: [],
+    id: 'mireth', name: 'Mireth', pitch: 'The Drowned Forest. Everything here is growing into everything else.',
+    packs: {
+      safe: [['leech'], ['puffcap', 'leech'], ['croaker'], ['moth']],
+      wild: [['croaker', 'leech'], ['hound'], ['moth', 'puffcap'], ['eel'], ['stilt'], ['knot'], ['hound', 'leech'], ['croaker', 'puffcap']],
+      deep: [['hound', 'hound'], ['knot', 'croaker'], ['stilt', 'moth'], ['eel', 'puffcap', 'puffcap'], ['knot', 'eel'], ['stilt', 'hound'], ['moth', 'moth', 'leech']],
+      lair: [['knot', 'eel'], ['hound', 'hound', 'puffcap'], ['stilt', 'croaker']],
+    },
+    ambush: [['stilt'], ['leech', 'leech'], ['eel'], ['hound']],
+    ambushText: 'Something rises out of the black water!',
+    elites: [['stag'], ['queen']],
+    nest: ['leech', 'leech'],
+    boss: ['titan'],
+    bossName: 'The Drowned Titan',
+    bossLog: 'mireth-5',
+    cards: ['rotneedle', 'symbiote', 'canopycut', 'sapgraft'],
+    events: MIRETH_EVENTS,
+    dark: 0.35,
+    hazard: 0.45,
+    hazardText: 'The black water drags at you.',
+    twistText: 'Rot festers here: it deals its number at the start of each turn, straight through plating, then drops by 1.',
+    reveals: ['orun'],
   },
   orun: {
     id: 'orun', name: 'Orun', pitch: 'The Dead Colony. Signal lost.', locked: true,

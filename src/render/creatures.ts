@@ -32,6 +32,17 @@ export const CREATURE_SIZE: Record<string, number> = {
   subject: 0.6,
   sleeper: 1.15,
   incinerator: 1.0,
+  leech: 0.4,
+  croaker: 0.55,
+  puffcap: 0.45,
+  moth: 0.75,
+  hound: 0.7,
+  eel: 0.9,
+  stilt: 1.4,
+  knot: 1.0,
+  stag: 1.35,
+  queen: 1.1,
+  titan: 1.9,
 };
 
 /**
@@ -72,6 +83,17 @@ export function drawCreature(
     case 'subject': drawSubject(ctx, u, fx, s); break;
     case 'sleeper': drawSleeper(ctx, u, fx, s); break;
     case 'incinerator': drawIncinerator(ctx, u, fx, s); break;
+    case 'leech': drawLeech(ctx, u, fx, s); break;
+    case 'croaker': drawCroaker(ctx, u, fx, s); break;
+    case 'puffcap': drawPuffcap(ctx, u, fx, s); break;
+    case 'moth': drawMoth(ctx, u, fx, s); break;
+    case 'hound': drawHound(ctx, u, fx, s); break;
+    case 'eel': drawEel(ctx, u, fx, s); break;
+    case 'stilt': drawStilt(ctx, u, fx, s); break;
+    case 'knot': drawKnot(ctx, u, fx, s); break;
+    case 'stag': drawStag(ctx, u, fx, s); break;
+    case 'queen': drawQueen(ctx, u, fx, s); break;
+    case 'titan': drawTitan(ctx, u, fx, s); break;
     default: break;
   }
 
@@ -890,4 +912,555 @@ function drawIncinerator(ctx: CanvasRenderingContext2D, u: number, fx: CreatureF
   // a stubby arm with a vent nozzle
   const reach = fx.lunge * u * 0.1;
   sketchStroke(ctx, [[-u * 0.36, -u * 0.4], [-u * 0.52 - reach, -u * 0.36], [-u * 0.56 - reach, -u * 0.28]], s + 40, w * 1.4);
+}
+
+// ================================================================ Mireth
+
+const MOSS = '#4f6b3a';
+const MOSS_DARK = '#2b3a22';
+const LIME = '#c4d86a';
+const LEECH_SKIN = '#2a1d1c';
+const SPORE = '#b8c98a';
+
+/** Wet, drooping strands of moss hanging from a line of points. */
+function mossFringe(ctx: CanvasRenderingContext2D, pts: Pt[], len: number, t: number, s: number) {
+  ctx.save();
+  ctx.strokeStyle = MOSS;
+  ctx.lineWidth = Math.max(1, len * 0.12);
+  ctx.beginPath();
+  pts.forEach(([x, y], i) => {
+    const l = len * (0.6 + 0.5 * (noise(s + i) * 0.5 + 0.5));
+    const sw = Math.sin(t * 1.2 + i) * len * 0.15;
+    ctx.moveTo(x, y);
+    ctx.quadraticCurveTo(x + sw * 0.5, y + l * 0.5, x + sw, y + l);
+  });
+  ctx.stroke();
+  ctx.restore();
+}
+
+// ------------------------------------------------------------ Leech Swarm
+
+function drawLeech(ctx: CanvasRenderingContext2D, u: number, fx: CreatureFx, s: number) {
+  const U = u * 0.4;
+  const w = Math.max(1, u * 0.01);
+  ctx.lineWidth = w;
+  // a writhing heap of fat black leeches
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2 + fx.t * 0.4;
+    const cx = Math.cos(a) * U * 0.35;
+    const cy = -U * 0.3 + Math.sin(a) * U * 0.14 - (i % 2) * U * 0.12;
+    const wr = Math.sin(fx.t * 5 + i * 1.7) * 0.25;
+    ctx.fillStyle = i % 2 ? LEECH_SKIN : '#3a2624';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, U * 0.3, U * 0.12, a + wr, 0, Math.PI * 2);
+    ctx.fill();
+    sketchStroke(ctx, sketchEllipse(cx, cy, U * 0.3, U * 0.12, s + i * 9, 10).map(([x, y]) => {
+      const dx = x - cx;
+      const dy = y - cy;
+      return [cx + dx * Math.cos(a + wr) - dy * Math.sin(a + wr), cy + dx * Math.sin(a + wr) + dy * Math.cos(a + wr)] as Pt;
+    }), s + i * 9, U * 0.02, true);
+  }
+  // one rears up with a round sucker mouth
+  const rear = Math.sin(fx.t * 2 + fx.seed) * U * 0.08;
+  ctx.fillStyle = LEECH_SKIN;
+  const neck: Pt[] = [[-U * 0.1, -U * 0.4], [-U * 0.05, -U * 0.85 + rear], [U * 0.12, -U * 0.9 + rear], [U * 0.12, -U * 0.4]];
+  fillPoly(ctx, neck);
+  sketchStroke(ctx, neck, s + 70, U * 0.02, true);
+  ctx.fillStyle = INK.fleshDark;
+  ctx.beginPath();
+  ctx.ellipse(U * 0.04, -U * 0.9 + rear, U * 0.1, U * 0.06, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = INK.flesh;
+  ctx.beginPath();
+  for (let k = 0; k < 6; k++) {
+    const a = (k / 6) * Math.PI * 2;
+    ctx.moveTo(U * 0.04 + Math.cos(a) * U * 0.04, -U * 0.9 + rear + Math.sin(a) * U * 0.025);
+    ctx.lineTo(U * 0.04 + Math.cos(a) * U * 0.09, -U * 0.9 + rear + Math.sin(a) * U * 0.055);
+  }
+  ctx.stroke();
+  ctx.strokeStyle = INK.bone;
+}
+
+// ------------------------------------------------------------ Bog Croaker
+
+function drawCroaker(ctx: CanvasRenderingContext2D, u: number, fx: CreatureFx, s: number) {
+  const U = u * 0.55;
+  const w = Math.max(1, u * 0.011);
+  ctx.lineWidth = w;
+  const puff = 1 + Math.max(0, Math.sin(fx.t * 1.6 + fx.seed)) * 0.18;
+  // squat legs
+  ctx.fillStyle = MOSS_DARK;
+  for (const side of [-1, 1]) {
+    const leg: Pt[] = [[side * U * 0.3, -U * 0.25], [side * U * 0.62, -U * 0.12], [side * U * 0.7, 0], [side * U * 0.35, 0]];
+    fillPoly(ctx, leg);
+    sketchStroke(ctx, leg, s + side * 5, U * 0.02, true);
+  }
+  // warty body
+  ctx.fillStyle = MOSS;
+  const body = sketchEllipse(0, -U * 0.42, U * 0.52, U * 0.36, s, 16);
+  smoothPath(ctx, body);
+  ctx.fill();
+  sketchStroke(ctx, body, s + 3, U * 0.015, true);
+  ctx.fillStyle = MOSS_DARK;
+  for (let i = 0; i < 7; i++) {
+    ctx.beginPath();
+    ctx.arc(noise(s + i) * U * 0.35, -U * 0.55 + noise(s + i + 20) * U * 0.18, U * 0.035, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // throat sac, swelling green
+  ctx.fillStyle = 'rgba(196,216,106,0.75)';
+  ctx.beginPath();
+  ctx.ellipse(U * 0.05, -U * 0.22, U * 0.24 * puff, U * 0.14 * puff, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // bulging eyes on top
+  for (const side of [-1, 1]) {
+    ctx.fillStyle = MOSS;
+    ctx.beginPath();
+    ctx.arc(side * U * 0.22, -U * 0.76, U * 0.1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    eye(ctx, side * U * 0.22, -U * 0.77, U * 0.05, LIME, fx.t + side);
+  }
+  // wide mouth line
+  sketchStroke(ctx, [[-U * 0.4, -U * 0.4], [0, -U * 0.34], [U * 0.4, -U * 0.4]], s + 40, U * 0.01);
+}
+
+// ----------------------------------------------------------------- Puffcap
+
+function drawPuffcap(ctx: CanvasRenderingContext2D, u: number, fx: CreatureFx, s: number) {
+  const U = u * 0.45;
+  const w = Math.max(1, u * 0.011);
+  ctx.lineWidth = w;
+  const swell = 1 + Math.sin(fx.t * 2.2 + fx.seed) * 0.05 + fx.dead * 0.3;
+  // stubby root feet
+  for (let i = 0; i < 4; i++) {
+    const x = (i / 3 - 0.5) * U * 0.5;
+    sketchStroke(ctx, [[x * 0.6, -U * 0.25], [x, -U * 0.08], [x * 1.3, 0]], s + i * 4, U * 0.02);
+  }
+  // pale stalk
+  ctx.fillStyle = '#cfc6a6';
+  const stalk: Pt[] = [[-U * 0.16, -U * 0.08], [-U * 0.12, -U * 0.55], [U * 0.12, -U * 0.55], [U * 0.18, -U * 0.08]];
+  fillPoly(ctx, stalk);
+  sketchStroke(ctx, stalk, s + 10, U * 0.02, true);
+  // swollen cap, spotted, puffing spores
+  ctx.fillStyle = '#6b4a5a';
+  ctx.beginPath();
+  ctx.ellipse(0, -U * 0.62, U * 0.55 * swell, U * 0.38 * swell, 0, Math.PI, 0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = SPORE;
+  for (let i = 0; i < 6; i++) {
+    const a = Math.PI + ((i + 0.5) / 6) * Math.PI;
+    ctx.beginPath();
+    ctx.arc(Math.cos(a) * U * 0.34 * swell, -U * 0.62 + Math.sin(a) * U * 0.22 * swell, U * 0.05, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  for (let k = 0; k < 5; k++) {
+    const ph = (fx.t * 0.4 + k / 5) % 1;
+    ctx.save();
+    ctx.globalAlpha *= 0.6 * (1 - ph);
+    ctx.beginPath();
+    ctx.arc(noise(s + k) * U * 0.5, -U * 1.0 - ph * U * 0.6, U * (0.03 + ph * 0.05), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  // two sleepy slit eyes under the brim
+  ctx.fillStyle = INK.void;
+  ctx.fillRect(-U * 0.1, -U * 0.5, U * 0.06, U * 0.02);
+  ctx.fillRect(U * 0.04, -U * 0.5, U * 0.06, U * 0.02);
+}
+
+// --------------------------------------------------------------- Gravemoth
+
+function drawMoth(ctx: CanvasRenderingContext2D, u: number, fx: CreatureFx, s: number) {
+  const U = u * 0.6;
+  const w = Math.max(1, u * 0.011);
+  ctx.lineWidth = w;
+  const hover = -U * 0.55 + Math.sin(fx.t * 3 + fx.seed) * U * 0.08;
+  const flap = Math.abs(Math.sin(fx.t * 9 + fx.seed));
+  // tattered paper wings
+  for (const side of [-1, 1]) {
+    ctx.fillStyle = 'rgba(200,190,160,0.55)';
+    const wing: Pt[] = [
+      [0, hover], [side * U * (0.3 + 0.35 * flap), hover - U * (0.45 - 0.2 * flap)],
+      [side * U * (0.7 + 0.1 * flap), hover - U * 0.1], [side * U * 0.55, hover + U * 0.12],
+      [side * U * 0.45, hover + U * 0.05], [side * U * 0.35, hover + U * 0.22],
+    ];
+    fillPoly(ctx, wing);
+    sketchStroke(ctx, wing, s + side * 7, U * 0.015, true);
+    // eye-spots
+    ctx.fillStyle = INK.fleshDark;
+    ctx.beginPath();
+    ctx.arc(side * U * (0.35 + 0.1 * flap), hover - U * 0.12, U * 0.06, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // fat furred body
+  ctx.fillStyle = '#4a4034';
+  const body = sketchEllipse(0, hover + U * 0.05, U * 0.1, U * 0.26, s + 30, 10);
+  smoothPath(ctx, body);
+  ctx.fill();
+  sketchStroke(ctx, body, s + 31, U * 0.015, true);
+  // feathered antennae
+  sketchStroke(ctx, [[-U * 0.03, hover - U * 0.18], [-U * 0.12, hover - U * 0.36]], s + 40, U * 0.01);
+  sketchStroke(ctx, [[U * 0.03, hover - U * 0.18], [U * 0.12, hover - U * 0.36]], s + 41, U * 0.01);
+  eye(ctx, 0, hover - U * 0.14, U * 0.04, LIME, fx.t);
+  // dust falling below it
+  ctx.fillStyle = SPORE;
+  for (let k = 0; k < 4; k++) {
+    const ph = (fx.t * 0.5 + k / 4) % 1;
+    ctx.fillRect(noise(s + k * 3) * U * 0.3, hover + U * 0.3 + ph * U * 0.5, 2, 2);
+  }
+}
+
+// -------------------------------------------------------------- Moss Hound
+
+function drawHound(ctx: CanvasRenderingContext2D, u: number, fx: CreatureFx, s: number) {
+  const U = u * 0.7;
+  const w = Math.max(1, u * 0.012);
+  ctx.lineWidth = w;
+  const pant = Math.sin(fx.t * 7 + fx.seed) * U * 0.015;
+  // four thin legs
+  for (const [x, k] of [[-0.38, 0], [-0.25, 1], [0.28, 2], [0.4, 3]] as [number, number][]) {
+    const step = Math.sin(fx.t * 3 + k * 1.6) * U * 0.03;
+    sketchStroke(ctx, [[x * U, -U * 0.42], [x * U + step, -U * 0.2], [x * U - U * 0.03, 0]], s + k * 5, U * 0.01);
+  }
+  // lean body, moss clumps where fur fell out
+  ctx.fillStyle = '#3b3a30';
+  const body: Pt[] = [[-U * 0.5, -U * 0.5], [-U * 0.2, -U * 0.62 + pant], [U * 0.3, -U * 0.6 + pant], [U * 0.45, -U * 0.42], [-U * 0.45, -U * 0.4]];
+  fillPoly(ctx, body);
+  sketchStroke(ctx, body, s + 20, U * 0.015, true);
+  ctx.fillStyle = MOSS;
+  for (let i = 0; i < 5; i++) {
+    ctx.beginPath();
+    ctx.ellipse(-U * 0.35 + i * U * 0.17, -U * 0.58 + noise(s + i) * U * 0.03, U * 0.08, U * 0.04, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // tail
+  sketchStroke(ctx, [[-U * 0.5, -U * 0.5], [-U * 0.68, -U * 0.62], [-U * 0.75, -U * 0.55]], s + 30, U * 0.015);
+  // long skull-like head, jaw hanging
+  ctx.fillStyle = INK.bone;
+  const head: Pt[] = [[U * 0.35, -U * 0.66], [U * 0.62, -U * 0.62], [U * 0.72, -U * 0.52], [U * 0.42, -U * 0.48]];
+  fillPoly(ctx, head);
+  sketchStroke(ctx, head, s + 40, U * 0.01, true);
+  ctx.fillStyle = INK.fleshDark;
+  const jaw: Pt[] = [[U * 0.42, -U * 0.48], [U * 0.68, -U * 0.45 + pant * 2], [U * 0.62, -U * 0.4 + pant * 2]];
+  fillPoly(ctx, jaw);
+  eye(ctx, U * 0.5, -U * 0.6, U * 0.03, LIME, fx.t + fx.seed);
+  mossFringe(ctx, [[-U * 0.3, -U * 0.42], [-U * 0.1, -U * 0.41], [U * 0.1, -U * 0.41]], U * 0.12, fx.t, s + 50);
+}
+
+// ------------------------------------------------------------ Lantern Eel
+
+function drawEel(ctx: CanvasRenderingContext2D, u: number, fx: CreatureFx, s: number) {
+  const U = u * 0.8;
+  const w = Math.max(1, u * 0.012);
+  ctx.lineWidth = w;
+  // a pool of black water it rises from
+  ctx.fillStyle = 'rgba(20,40,48,0.9)';
+  ctx.beginPath();
+  ctx.ellipse(0, -U * 0.02, U * 0.45, U * 0.08, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // S-curved body out of the water
+  const sway = Math.sin(fx.t * 1.8 + fx.seed) * U * 0.08;
+  const spine: Pt[] = [];
+  for (let i = 0; i <= 10; i++) {
+    const k = i / 10;
+    spine.push([Math.sin(k * 3.2 + fx.t * 1.5) * U * 0.12 * (1 - k) + sway * k, -k * U * 0.9]);
+  }
+  ctx.strokeStyle = '#243a3a';
+  ctx.lineWidth = U * 0.16;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  spine.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+  ctx.stroke();
+  ctx.strokeStyle = INK.bone;
+  ctx.lineWidth = w;
+  sketchStroke(ctx, spine.map(([x, y]) => [x - U * 0.08, y] as Pt), s, U * 0.01);
+  sketchStroke(ctx, spine.map(([x, y]) => [x + U * 0.08, y] as Pt), s + 3, U * 0.01);
+  // glowing spots down its flank
+  const glow = 0.5 + 0.5 * Math.sin(fx.t * 4 + fx.seed);
+  for (let i = 2; i < 10; i += 2) {
+    const [x, y] = spine[i];
+    ctx.fillStyle = `rgba(196,216,106,${0.4 + 0.5 * glow})`;
+    ctx.beginPath();
+    ctx.arc(x + U * 0.04, y, U * 0.025, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // head with a lure dangling in front
+  const [hx, hy] = spine[10];
+  ctx.fillStyle = '#243a3a';
+  ctx.beginPath();
+  ctx.ellipse(hx + U * 0.06, hy, U * 0.16, U * 0.1, -0.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  sketchStroke(ctx, [[hx + U * 0.05, hy - U * 0.08], [hx + U * 0.25, hy - U * 0.22], [hx + U * 0.32, hy - U * 0.1]], s + 20, U * 0.01);
+  const g = ctx.createRadialGradient(hx + U * 0.32, hy - U * 0.08, 0, hx + U * 0.32, hy - U * 0.08, U * 0.2);
+  g.addColorStop(0, `rgba(230,245,160,${0.5 + 0.4 * glow})`);
+  g.addColorStop(1, 'rgba(196,216,106,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(hx + U * 0.12, hy - U * 0.28, U * 0.4, U * 0.4);
+  ctx.fillStyle = '#eef6c0';
+  ctx.beginPath();
+  ctx.arc(hx + U * 0.32, hy - U * 0.08, U * 0.035, 0, Math.PI * 2);
+  ctx.fill();
+  eye(ctx, hx + U * 0.12, hy - U * 0.02, U * 0.025, LIME, fx.t);
+}
+
+// --------------------------------------------------------------- Stiltwader
+
+function drawStilt(ctx: CanvasRenderingContext2D, u: number, fx: CreatureFx, s: number) {
+  const U = u * 1.35;
+  const w = Math.max(1, u * 0.012);
+  ctx.lineWidth = w;
+  const bob = Math.sin(fx.t * 0.9 + fx.seed) * U * 0.01;
+  // two impossibly long legs with backward knees
+  for (const side of [-1, 1]) {
+    const step = Math.sin(fx.t * 0.7 + side) * U * 0.015;
+    sketchStroke(ctx, [[side * U * 0.05, -U * 0.62 + bob], [side * U * 0.09 + step, -U * 0.34], [side * U * 0.04, 0]], s + side * 7, U * 0.006);
+    sketchStroke(ctx, [[side * U * 0.04, 0], [side * U * 0.1, 0]], s + side * 9, U * 0.004);
+  }
+  // body, a hunched grey-green bundle of feathers
+  ctx.fillStyle = '#56604a';
+  const body = sketchEllipse(0, -U * 0.7 + bob, U * 0.14, U * 0.1, s + 20, 12);
+  smoothPath(ctx, body);
+  ctx.fill();
+  sketchStroke(ctx, body, s + 21, U * 0.008, true);
+  mossFringe(ctx, [[-U * 0.1, -U * 0.64], [-U * 0.03, -U * 0.62], [U * 0.05, -U * 0.63]], U * 0.06, fx.t, s + 22);
+  // S-neck up to a small head and a long spear beak
+  const neck: Pt[] = [[U * 0.08, -U * 0.76 + bob], [U * 0.02, -U * 0.86], [U * 0.1, -U * 0.94], [U * 0.06, -U * 1.0]];
+  ctx.lineWidth = U * 0.03;
+  ctx.strokeStyle = '#56604a';
+  ctx.beginPath();
+  neck.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+  ctx.stroke();
+  ctx.lineWidth = w;
+  ctx.strokeStyle = INK.bone;
+  ctx.fillStyle = '#56604a';
+  ctx.beginPath();
+  ctx.ellipse(U * 0.06, -U * 1.0, U * 0.035, U * 0.028, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = INK.bone;
+  fillPoly(ctx, [[U * 0.08, -U * 1.01], [U * 0.32, -U * 0.98], [U * 0.08, -U * 0.985]]);
+  eye(ctx, U * 0.06, -U * 1.005, U * 0.01, LIME, fx.t);
+}
+
+// --------------------------------------------------------------- Root Knot
+
+function drawKnot(ctx: CanvasRenderingContext2D, u: number, fx: CreatureFx, s: number) {
+  const U = u * 1.1;
+  const w = Math.max(1, u * 0.012);
+  const creak = Math.sin(fx.t * 0.8 + fx.seed) * 0.04;
+  // a tangle of thick roots, twisted into a rough body
+  ctx.strokeStyle = '#4a3a28';
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 9; i++) {
+    const a0 = (i / 9) * Math.PI * 2;
+    ctx.lineWidth = U * (0.06 + 0.03 * (noise(s + i) * 0.5 + 0.5));
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a0) * U * 0.35, 0);
+    ctx.bezierCurveTo(
+      Math.cos(a0 + 1.5 + creak) * U * 0.4, -U * 0.3,
+      Math.cos(a0 - 1.2) * U * 0.3, -U * 0.65,
+      Math.cos(a0 + 0.8 + creak) * U * 0.18, -U * (0.85 + 0.1 * noise(s + i * 3)),
+    );
+    ctx.stroke();
+  }
+  ctx.lineWidth = w;
+  ctx.strokeStyle = INK.bone;
+  for (let i = 0; i < 5; i++) {
+    const a0 = (i / 5) * Math.PI * 2;
+    sketchStroke(ctx, [[Math.cos(a0) * U * 0.32, 0], [Math.cos(a0 + 1.5) * U * 0.3, -U * 0.4], [Math.cos(a0 + 0.8) * U * 0.16, -U * 0.85]], s + 60 + i * 5, U * 0.02);
+  }
+  // grasping root-fingers out to the sides
+  for (const side of [-1, 1]) {
+    const reach = Math.sin(fx.t * 1.1 + side) * U * 0.04;
+    sketchStroke(ctx, [[side * U * 0.2, -U * 0.55], [side * U * 0.5, -U * 0.6 + reach], [side * U * 0.62, -U * 0.45], [side * U * 0.7, -U * 0.5]], s + side * 30, U * 0.015);
+  }
+  mossFringe(ctx, [[-U * 0.2, -U * 0.8], [-U * 0.05, -U * 0.86], [U * 0.12, -U * 0.8], [U * 0.25, -U * 0.7]], U * 0.18, fx.t, s + 90);
+  // a hollow in the wood, with a light inside
+  ctx.fillStyle = INK.void;
+  ctx.beginPath();
+  ctx.ellipse(0, -U * 0.5, U * 0.09, U * 0.13, 0, 0, Math.PI * 2);
+  ctx.fill();
+  eye(ctx, 0, -U * 0.5, U * 0.04, LIME, fx.t * 0.5 + fx.seed);
+}
+
+// ------------------------------------------------------------ Mossback Stag
+
+function drawStag(ctx: CanvasRenderingContext2D, u: number, fx: CreatureFx, s: number) {
+  const U = u * 1.4;
+  const w = Math.max(1.2, u * 0.013);
+  ctx.lineWidth = w;
+  const breathe = Math.sin(fx.t * 1.1 + fx.seed) * U * 0.01;
+  // legs
+  for (const [x, k] of [[-0.3, 0], [-0.18, 1], [0.2, 2], [0.3, 3]] as [number, number][]) {
+    sketchStroke(ctx, [[x * U, -U * 0.4], [x * U + U * 0.02, -U * 0.2], [x * U, 0]], s + k * 5, U * 0.008);
+  }
+  // barrel body, overgrown: moss, ferns, a small tree on its back
+  ctx.fillStyle = '#3a3a2c';
+  const body = sketchEllipse(0, -U * 0.48 + breathe, U * 0.36, U * 0.14, s + 10, 16);
+  smoothPath(ctx, body);
+  ctx.fill();
+  sketchStroke(ctx, body, s + 11, U * 0.008, true);
+  ctx.fillStyle = MOSS;
+  for (let i = 0; i < 7; i++) {
+    ctx.beginPath();
+    ctx.ellipse(-U * 0.3 + i * U * 0.1, -U * 0.6 + breathe + noise(s + i) * U * 0.02, U * 0.07, U * 0.04, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  sketchStroke(ctx, [[-U * 0.08, -U * 0.62], [-U * 0.1, -U * 0.8], [-U * 0.16, -U * 0.9]], s + 20, U * 0.01);
+  sketchStroke(ctx, [[-U * 0.1, -U * 0.78], [-U * 0.02, -U * 0.88]], s + 21, U * 0.008);
+  mossFringe(ctx, [[-U * 0.28, -U * 0.4], [-U * 0.1, -U * 0.36], [U * 0.1, -U * 0.36], [U * 0.26, -U * 0.4]], U * 0.1, fx.t, s + 22);
+  // neck and head, low and heavy
+  ctx.fillStyle = '#3a3a2c';
+  const head: Pt[] = [[U * 0.28, -U * 0.55], [U * 0.44, -U * 0.72], [U * 0.56, -U * 0.66], [U * 0.5, -U * 0.56], [U * 0.34, -U * 0.44]];
+  fillPoly(ctx, head);
+  sketchStroke(ctx, head, s + 30, U * 0.008, true);
+  // antlers: branching wood with moss hanging off
+  ctx.strokeStyle = '#8a7a5a';
+  ctx.lineWidth = U * 0.018;
+  for (const side of [-1, 1]) {
+    const bx = U * 0.46;
+    const by = -U * 0.72;
+    ctx.beginPath();
+    ctx.moveTo(bx, by);
+    ctx.lineTo(bx + side * U * 0.12, by - U * 0.2);
+    ctx.lineTo(bx + side * U * 0.22, by - U * 0.3);
+    ctx.moveTo(bx + side * U * 0.08, by - U * 0.13);
+    ctx.lineTo(bx + side * U * 0.2, by - U * 0.14);
+    ctx.moveTo(bx + side * U * 0.15, by - U * 0.24);
+    ctx.lineTo(bx + side * U * 0.12, by - U * 0.36);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = INK.bone;
+  ctx.lineWidth = w;
+  mossFringe(ctx, [[U * 0.36, -U * 0.86], [U * 0.62, -U * 0.84]], U * 0.1, fx.t, s + 40);
+  eye(ctx, U * 0.49, -U * 0.66, U * 0.02, LIME, fx.t + fx.seed);
+}
+
+// ------------------------------------------------------------ Leech Mother
+
+function drawQueen(ctx: CanvasRenderingContext2D, u: number, fx: CreatureFx, s: number) {
+  const U = u * 1.2;
+  const w = Math.max(1.2, u * 0.013);
+  ctx.lineWidth = w;
+  const pulse = 1 + Math.sin(fx.t * 1.3 + fx.seed) * 0.03;
+  // a pale bloated body, half sunk in the mud
+  ctx.fillStyle = 'rgba(20,28,22,0.9)';
+  ctx.beginPath();
+  ctx.ellipse(0, -U * 0.03, U * 0.55, U * 0.08, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#b9a79a';
+  const body = sketchEllipse(0, -U * 0.4, U * 0.42 * pulse, U * 0.38 * pulse, s, 18);
+  smoothPath(ctx, body);
+  ctx.fill();
+  sketchStroke(ctx, body, s + 1, U * 0.01, true);
+  // ring segments
+  for (let i = 1; i < 5; i++) {
+    const y = -U * 0.72 + i * U * 0.13;
+    sketchStroke(ctx, [[-U * 0.36 * Math.sin((i / 5) * Math.PI + 0.3), y], [U * 0.36 * Math.sin((i / 5) * Math.PI + 0.3), y]], s + i * 7, U * 0.008);
+  }
+  // dark young clinging to her
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2 + fx.t * 0.2;
+    ctx.fillStyle = LEECH_SKIN;
+    ctx.beginPath();
+    ctx.ellipse(Math.cos(a) * U * 0.34, -U * 0.4 + Math.sin(a) * U * 0.3, U * 0.08, U * 0.03, a + 1.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // a crown of sucking mouths on top
+  for (let i = 0; i < 3; i++) {
+    const x = (i - 1) * U * 0.16;
+    const lift = Math.sin(fx.t * 2 + i) * U * 0.03;
+    ctx.fillStyle = '#b9a79a';
+    ctx.beginPath();
+    ctx.ellipse(x, -U * 0.8 - lift, U * 0.06, U * 0.1, (i - 1) * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = INK.fleshDark;
+    ctx.beginPath();
+    ctx.arc(x + (i - 1) * U * 0.02, -U * 0.88 - lift, U * 0.035, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  eye(ctx, -U * 0.1, -U * 0.55, U * 0.03, INK.flesh, fx.t);
+  eye(ctx, U * 0.1, -U * 0.55, U * 0.03, INK.flesh, fx.t + 1);
+}
+
+// -------------------------------------------------------- The Drowned Titan
+
+function drawTitan(ctx: CanvasRenderingContext2D, u: number, fx: CreatureFx, s: number) {
+  const U = u * 1.0;
+  const w = Math.max(1.3, u * 0.014);
+  ctx.lineWidth = w;
+  const breathe = Math.sin(fx.t * 0.6) * U * 0.02;
+  // it stands in a lake of black water
+  ctx.fillStyle = 'rgba(16,30,34,0.95)';
+  ctx.beginPath();
+  ctx.ellipse(0, -U * 0.05, U * 0.9, U * 0.14, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(127,176,168,0.5)';
+  for (let k = 0; k < 3; k++) {
+    const ph = (fx.t * 0.3 + k / 3) % 1;
+    ctx.beginPath();
+    ctx.ellipse(0, -U * 0.05, U * (0.5 + ph * 0.4), U * (0.08 + ph * 0.06), 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = INK.bone;
+  // a trunk of a body: bark, roots and the ghost of a flight suit
+  ctx.fillStyle = '#2e2a20';
+  const trunk: Pt[] = [
+    [-U * 0.5, -U * 0.08], [-U * 0.42, -U * 0.7], [-U * 0.55, -U * 1.1 + breathe], [-U * 0.25, -U * 1.35 + breathe],
+    [U * 0.25, -U * 1.35 + breathe], [U * 0.55, -U * 1.1 + breathe], [U * 0.42, -U * 0.7], [U * 0.5, -U * 0.08],
+  ];
+  fillPoly(ctx, trunk);
+  sketchStroke(ctx, trunk, s, U * 0.01, true);
+  for (let i = 0; i < 6; i++) {
+    const x = -U * 0.35 + i * U * 0.14;
+    sketchStroke(ctx, [[x, -U * 0.1], [x + noise(s + i) * U * 0.05, -U * 0.7], [x + noise(s + i + 5) * U * 0.08, -U * 1.2]], s + 20 + i * 3, U * 0.01);
+  }
+  // the old suit: a collar ring and a faded mission patch
+  ctx.strokeStyle = '#8a8676';
+  ctx.beginPath();
+  ctx.ellipse(0, -U * 1.28 + breathe, U * 0.2, U * 0.05, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = INK.sodium;
+  ctx.globalAlpha *= 0.6;
+  ctx.fillRect(-U * 0.3, -U * 1.0, U * 0.1, U * 0.07);
+  ctx.globalAlpha /= 0.6;
+  ctx.strokeStyle = INK.bone;
+  // arms: huge root-limbs trailing into the water
+  for (const side of [-1, 1]) {
+    const sway = Math.sin(fx.t * 0.7 + side) * U * 0.04;
+    ctx.strokeStyle = '#3a3426';
+    ctx.lineWidth = U * 0.1;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(side * U * 0.48, -U * 1.1 + breathe);
+    ctx.quadraticCurveTo(side * U * 0.9 + sway, -U * 0.9, side * U * 0.8 + sway, -U * 0.1);
+    ctx.stroke();
+    ctx.lineWidth = w;
+    ctx.strokeStyle = INK.bone;
+    sketchStroke(ctx, [[side * U * 0.48, -U * 1.1], [side * U * 0.9 + sway, -U * 0.9], [side * U * 0.8 + sway, -U * 0.1]], s + side * 40, U * 0.012);
+  }
+  // the head: a helmet grown over with fungus, the visor still glowing
+  ctx.fillStyle = '#403a2c';
+  ctx.beginPath();
+  ctx.ellipse(0, -U * 1.5 + breathe, U * 0.2, U * 0.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  const glow = 0.5 + 0.4 * Math.sin(fx.t * 1.3);
+  ctx.fillStyle = `rgba(196,216,106,${glow})`;
+  ctx.beginPath();
+  ctx.ellipse(0, -U * 1.5 + breathe, U * 0.14, U * 0.06, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // shelf fungus and hanging moss everywhere
+  ctx.fillStyle = '#b8a07a';
+  for (const [x, y, r] of [[-U * 0.4, -U * 1.0, 0.1], [U * 0.38, -U * 0.8, 0.12], [-U * 0.2, -U * 0.6, 0.08], [U * 0.18, -U * 1.62, 0.09]] as [number, number, number][]) {
+    ctx.beginPath();
+    ctx.ellipse(x, y + breathe, U * r, U * r * 0.35, 0, Math.PI, 0);
+    ctx.fill();
+  }
+  mossFringe(ctx, [[-U * 0.5, -U * 1.1], [-U * 0.3, -U * 1.3], [U * 0.1, -U * 1.33], [U * 0.35, -U * 1.25], [U * 0.52, -U * 1.1]], U * 0.3, fx.t, s + 70);
+  mossFringe(ctx, [[-U * 0.15, -U * 1.42], [U * 0.15, -U * 1.42]], U * 0.18, fx.t, s + 80);
 }

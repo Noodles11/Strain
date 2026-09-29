@@ -19,6 +19,8 @@ export type Effect<N = Val> =
   | { op: 'drain'; v: N } // percent of damage this card dealt, healed
   | { op: 'surge'; v: N } // +v to a random trait this fight; unstable
   | { op: 'shatter'; v: N } // deal target plating × v, then strip it
+  | { op: 'rot'; v: N; aoe?: boolean } // Rot: v damage at the start of its turn, then v−1
+  | { op: 'healPerRot'; v: N } // heal v for each point of Rot on enemies
   | { op: 'donor' }
   | { op: 'cannibal' };
 
@@ -251,6 +253,29 @@ export const CARDS: Record<string, CardDef> = {
     rule: 'This plating doesn’t fade next turn.',
     flavor: 'It grows over you in a night.',
   },
+  // ---- Mireth ----
+  rotneedle: {
+    id: 'rotneedle', name: 'Rot Needle', deck: 'tac', cost: 1, glyph: '⸙',
+    fx: [{ op: 'rot', v: v(1, { abr: 1 }) }],
+    th: [{ t: 'abr', at: 9, text: 'Weak 1', apply: (r) => r.fx.push({ op: 'weak', v: 1 }) }],
+    flavor: 'A thorn off the drowned trees. What it pricks goes soft.',
+  },
+  symbiote: {
+    id: 'symbiote', name: 'Symbiote', deck: 'tac', cost: 1, glyph: '❦',
+    fx: [{ op: 'healPerRot', v: v(1) }],
+    th: [{ t: 'met', at: 8, text: 'Heal 2 per Rot', apply: (r) => setNum(r, 'healPerRot', 2) }],
+    flavor: 'It lives on what is dying near you. So do you, now.',
+  },
+  canopycut: {
+    id: 'canopycut', name: 'Canopy Cut', deck: 'tac', cost: 2, glyph: '⟆',
+    fx: [{ op: 'dmg', v: v(2, { mgt: 1 }), aoe: true }, { op: 'rot', v: v(0, { abr: 0.5 }), aoe: true }],
+    flavor: 'A wide stroke through wet wood. Everything it touches starts to turn.',
+  },
+  sapgraft: {
+    id: 'sapgraft', name: 'Sap Graft', deck: 'tac', cost: 0, glyph: '⚘',
+    fx: [{ op: 'dmg', v: v(0, { abr: 1 }) }, { op: 'drain', v: v(100) }],
+    flavor: 'Tap them like a tree.',
+  },
   splitlens: {
     id: 'splitlens', name: 'Split Lens', deck: 'tac', cost: 1, glyph: '⟁', dyn: 'splitlens',
     fx: [{ op: 'dmg', v: v(0, { rfx: 1 }), aoe: true }],
@@ -361,6 +386,8 @@ export function resolveCard(def: CardDef, t: Traits, donor = false): ResolvedCar
         return { op: 'dmg', v: Math.max(0, evalVal(e.v, tt)), hits: e.hits ? evalVal(e.hits, tt) : 1, aoe: e.aoe };
       case 'plate':
         return { op: 'plate', v: Math.max(0, evalVal(e.v, tt)), keep: e.keep };
+      case 'rot':
+        return { op: 'rot', v: Math.max(0, evalVal(e.v, tt)), aoe: e.aoe };
       default:
         return { op: e.op, v: Math.max(0, evalVal(e.v, tt)) } as Effect<number>;
     }
@@ -403,7 +430,7 @@ function setHits(r: ResolvedCard, n: number) {
 /** Icons that stand in for effect words on the card face. */
 export type IconId =
   | 'dmg' | 'all' | 'plate' | 'heal' | 'draw' | 'energy' | 'weak' | 'expose' | 'tag' | 'triage' | 'empower'
-  | 'drain' | 'surge' | 'shatter' | 'bio' | 'key' | 'cut' | 'scan' | 'flare' | 'notes' | 'seal' | 'pry' | 'beacon' | 'stalk';
+  | 'drain' | 'surge' | 'shatter' | 'rot' | 'bio' | 'key' | 'cut' | 'scan' | 'flare' | 'notes' | 'seal' | 'pry' | 'beacon' | 'stalk';
 
 /**
  * A piece of card text. Numbers carry the trait that drives them and how they were made.
@@ -454,6 +481,13 @@ export function cardText(def: CardDef, t: Traits, opts: { donor?: boolean; dmgBo
       case 'drain': lines.push([ic('drain', `Heal ${e.v}% of damage dealt`, `${e.v}%`)]); break;
       case 'surge': lines.push([ic('surge', '+2 to a random trait this fight', '+2 ?')]); break;
       case 'shatter': lines.push([ic('shatter', `Deal plating ×${e.v}, then strip it`, `×${e.v}`)]); break;
+      case 'rot': {
+        const segs: TextSeg[] = [ic('rot', 'Rot '), num(e.v, val)];
+        if (e.aoe) segs.push(ic('all', ' to ALL'));
+        lines.push(segs);
+        break;
+      }
+      case 'healPerRot': lines.push([ic('heal', 'Heal '), num(e.v, val), ic('rot', ' per Rot on enemies', '/')]); break;
       case 'donor': break;
       case 'cannibal': break;
     }

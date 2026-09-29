@@ -134,8 +134,42 @@ Plates read ASLEEP, FLEES IN n, BLOWS IN n and, on the last turn, the blast dama
 - Spend Codons on sequence levels, same price as the Printer (`6 + 3 × level`): carried Codons go first, then banked ones.
 - The level is permanent (written to the Printer at once) and applies to this clone right away (new max integrity is filled in).
 
+## Mireth, the Drowned Forest (S7, part 1)
+
+Revealed by the Prism Mother; landing 3, tier 3. Moss-green solid floor, black-water hazard ("the black water drags at you"),
+reeds and hanging moss on the walls, 35% of wild/deep sections dark. Its boss reveals Orun (still a lost signal).
+
+**Rot** (new status, both sides): deals its number at the start of the owner's turn, straight through plating, then drops by 1.
+Shown as a mushroom icon on plates and intents.
+
+| Mob | Rank | Rule |
+|---|---|---|
+| Leech Swarm | easy | Two quick bites; heals itself for what it takes (drain) |
+| Bog Croaker | easy | Spits Rot 2, tongue lash, bloats (plating + Rot) |
+| Puffcap | easy | Weak attacks; **bursts for Rot 3 on you when killed** |
+| Gravemoth | easy | Dust (Weak + Rot), then a 3-hit flutter |
+| Moss Hound | medium | Pairs; bites that add Rot, howls for +2 strength |
+| Lantern Eel | medium | Glows (plating, strength), then a Shock that **pierces plating** |
+| Stiltwader | medium | Wades (plating), then an 11-damage Spear; also ambushes from the water |
+| Root Knot | medium | Tank: Entangle (Weak + Expose), Grow (plating 4), Lash |
+| Mossback Stag | elite | **Regrows 4 + tier÷2 HP each turn**; Gore 13, Trample 6×2, Bellow |
+| Leech Mother | elite | Broods Leech Swarms, Engorge (drain), Bloodrain (hits + Rot) |
+| The Drowned Titan | boss | 120 HP, regrows; Surge, Silt (Rot 3), Undertow 16, Rootbed. Below half: seeds Puffcaps, Drown (+Rot), Grasp (drain), Bloom (Rot 3, allies +2) |
+
+Mireth cards (drop only here, weighted double): **Rot Needle** (Rot 1 + ABR; ABR 9: Weak 1), **Symbiote** (heal 1 per Rot on
+enemies; MET 8: 2 per Rot), **Canopy Cut** (2 + MGT to ALL, Rot ABR÷2 to ALL), **Sap Graft** (0 cost: deal ABR, heal all of it).
+4 events (sunken probe, pale fruit, whispering roots, sinking clone), 5 logs (4 from events, 1 from the Titan).
+
+Bot sim, three landings (rushes each boss, 20 seeds):
+
+| Sequence | Cleared all three | Died on Mireth | Died earlier |
+|---|---|---|---|
+| all 7 | 1 | 18 | 1 |
+| all 9 | 15 | 5 | 0 |
+| all 11 | 20 | 0 | 0 |
+
 ## Not in this build yet
 
-- Mireth, Orun — S7.
+- Orun — S7.
 - Chassis, Archive, signal strength — S8.
 - Jet Pack, Lure, Core Drill, Sample Kit (need planet terrain).

@@ -53,6 +53,8 @@ export class PlaceView {
   private reach = BACK;
   private shotKey = '';
   private shot = { off: 0, back: BACK };
+  /** Sideways shift of the final view (px), so every fighter fits on screen. */
+  pan = 0;
 
   /**
    * Where the battle camera sits: straight behind the clone if the corridor allows,
@@ -93,14 +95,14 @@ export class PlaceView {
 
   /** Back-row spots (tiles ahead, tiles to the right) that stand on open floor, not in a wall. */
   backSlots(w: World, at: FightAt): [number, number][] {
-    const cands: [number, number][] = [[2, -0.8], [2, 0.8], [2, 0], [2.7, -0.5], [2.7, 0.5], [3, 0], [1.6, -0.9], [1.6, 0.9], [3.5, 0]];
+    const cands: [number, number][] = [[2, -0.8], [2, 0.8], [1.3, -0.95], [1.3, 0.95], [2.7, -0.6], [2.7, 0.6], [1.9, -0.45], [1.9, 0.45], [2, 0], [3, 0], [3.5, 0]];
     const out: [number, number][] = [];
     const used: [number, number][] = [[1, 0], [0, 0]];
     for (const [a, s] of cands) {
       const x = Math.floor(at.x + 0.5 + at.fx * a - at.fy * s);
       const y = Math.floor(at.y + 0.5 + at.fy * a + at.fx * s);
       if (!openAt(w, x, y)) continue;
-      if (used.some(([ua, us]) => Math.hypot(ua - a, us - s) < 0.9)) continue;
+      if (used.some(([ua, us]) => Math.hypot(ua - a, us - s) < 0.85)) continue;
       out.push([a, s]);
       used.push([a, s]);
       if (out.length === 2) break;
@@ -137,7 +139,7 @@ export class PlaceView {
     this.camX = px - Math.cos(ca) * back * e;
     this.camY = py - Math.sin(ca) * back * e;
     this.reach = back;
-    this.cx = lerp(W / 2, W * 0.7, e);
+    this.cx = lerp(W / 2, W * 0.7 + this.pan, e);
     this.cy = lerp(H / 2, H * 0.52, e);
   }
 
@@ -426,6 +428,24 @@ export class PlaceView {
         ctx.strokeStyle = edge;
         ctx.stroke();
         this.fogOver(ctx, q, this.far(x + 0.5, y + 0.5), th);
+      }
+    }
+    if (isWall && th.reeds) {
+      // hanging moss along the top of the wall faces toward the camera
+      const base = this.project(x + 0.5, y + 0.5, h);
+      if (base) {
+        const s = this.F / base.d;
+        ctx.strokeStyle = th.wallEdge;
+        ctx.globalAlpha = alpha * 0.6;
+        ctx.lineWidth = Math.max(1, s * 0.02);
+        ctx.beginPath();
+        for (let i = 0; i < 5; i++) {
+          const ox = (i - 2) * s * 0.18 + noise(x * 3 + y + i) * s * 0.05;
+          const len = s * (0.15 + 0.25 * (noise(x + y * 5 + i * 7) * 0.5 + 0.5));
+          ctx.moveTo(base.x + ox, base.y);
+          ctx.lineTo(base.x + ox + noise(i + x) * s * 0.03, base.y + len);
+        }
+        ctx.stroke();
       }
     }
     if (isWall && th.crystals && noise(x * 7.1 + y * 3.3) > 0.3) {

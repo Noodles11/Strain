@@ -28,6 +28,8 @@ const PATHS: Record<IconId, string> = {
   surge: '<path d="M4 1 Q12 5 4 8 Q-4 11 4 15 M12 1 Q4 5 12 8 Q20 11 12 15" fill="none" stroke="currentColor" stroke-width="1.8"/>',
   // broken hex
   shatter: '<path d="M8 1 L14.5 4.5 L14.5 11.5 L8 15 L1.5 11.5 L1.5 4.5 Z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 2 L6.5 7 L9.5 9 L7.5 14.5" fill="none" stroke="currentColor" stroke-width="1.6"/>',
+  // a mushroom cap over dripping spores
+  rot: '<path d="M1.5 8 Q8 -1 14.5 8 Z"/><path d="M6.5 8 V13.5 H9.5 V8" /><circle cx="3.5" cy="12" r="1.1"/><circle cx="12.5" cy="11" r="1.1"/><circle cx="12" cy="14.6" r="0.9"/>',
   // a drop
   bio: '<path d="M8 1 Q14 8 14 10.5 A6 6 0 0 1 2 10.5 Q2 8 8 1 Z"/>',
   key: '<circle cx="4.5" cy="8" r="3.2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M7.5 8 H15 M12 8 V11.5 M14.5 8 V10.5" stroke="currentColor" stroke-width="2"/>',

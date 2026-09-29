@@ -70,7 +70,8 @@ describe('Kessra', () => {
     expect(r.world.tier).toBe(2);
     expect(r.planet).toBe('kessra');
     expect(chartOptions(r).find((o) => o.id === 'kessra')!.state).toBe('visited');
-    expect(chartOptions(r).find((o) => o.id === 'mireth')!.state).toBe('lost');
+    expect(chartOptions(r).find((o) => o.id === 'mireth')!.state).toBe('unknown');
+    expect(chartOptions(r).find((o) => o.id === 'orun')!.state).toBe('lost');
   });
 });
 

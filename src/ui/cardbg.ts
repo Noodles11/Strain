@@ -112,6 +112,25 @@ const PLATES: Record<string, Plate> = {
     color: TEAL, sun: [50, 26],
     emblem: P('M50 10 L66 24 L50 54 L34 24 Z') + hi('M34 24 L66 24 M50 10 L44 24 L50 54 M50 10 L56 24 L50 54'),
   },
+  rotneedle: {
+    color: GREEN, sun: [30, 24],
+    emblem: P('M22 50 L66 18 L70 22 L28 54 Z') + P('M66 18 Q78 8 82 14 Q76 18 70 22 Z') +
+      `<circle cx="76" cy="30" r="3" fill="${INK}"/><circle cx="82" cy="40" r="2.2" fill="${INK}"/><circle cx="72" cy="44" r="1.8" fill="${INK}"/>`,
+  },
+  symbiote: {
+    color: GREEN, sun: [50, 26],
+    emblem: P('M50 54 Q36 40 40 26 Q44 14 50 10 Q56 14 60 26 Q64 40 50 54 Z') + hi('M50 50 L50 16 M50 30 L42 22 M50 38 L58 28') +
+      line('M24 50 Q30 40 40 42 M76 50 Q70 40 60 42'),
+  },
+  canopycut: {
+    color: GREEN, sun: [70, 18],
+    emblem: line('M12 44 Q50 18 88 44') + P('M20 50 Q26 36 34 50 Z M44 54 Q50 38 56 54 Z M66 50 Q74 36 80 50 Z'),
+  },
+  sapgraft: {
+    color: GREEN, sun: [34, 22],
+    emblem: P('M44 56 L44 26 Q44 14 56 12 L58 18 Q50 20 50 28 L50 56 Z') + P('M58 30 Q66 40 58 48 Q50 40 58 30 Z', `fill="${INK}"`) +
+      line('M30 24 Q36 30 44 30'),
+  },
   splitlens: {
     color: VIOLET, sun: [22, 30],
     emblem: line('M8 32 L40 32') + P('M40 14 L58 46 L22 46 Z', `fill="${PAPER}" stroke="${INK}" stroke-width="2.5"`) +

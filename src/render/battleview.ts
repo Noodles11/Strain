@@ -97,6 +97,20 @@ export class BattleView {
         this.drawBackdrop(ctx, W, H, t, th);
         ctx.restore();
       }
+      // pan the view so the whole enemy group fits between the clone and the screen edge
+      this.place.pan = 0;
+      this.place.setCamera(place.at, W, H, 1, place.run.world);
+      const n = b.foes.filter((f) => f.alive || !this.anim(f.uid).gone).length;
+      const spots: [number, number][] = [[1, 0], ...this.place.backSlots(place.run.world, place.at).slice(0, Math.max(0, n - 1))];
+      const xs = spots.map(([a, sd]) => this.place.ground(place.at, a, sd)?.x).filter((x): x is number => x !== undefined);
+      if (xs.length) {
+        const lo = Math.min(...xs);
+        const hi = Math.max(...xs);
+        let pan = 0;
+        if (hi > W * 0.88) pan = W * 0.88 - hi;
+        if (lo + pan < W * 0.38) pan = (W * 0.38 - lo + pan) / 2 + pan / 2;
+        this.place.pan = pan;
+      }
       this.place.draw(ctx, place.run, place.at, W, H, t, th, this.cam);
     } else this.drawBackdrop(ctx, W, H, t, th);
 

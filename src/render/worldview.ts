@@ -177,6 +177,31 @@ export class WorldView {
           }
           ctx.globalAlpha = 1;
         }
+        if (th.reeds && noise(i * 2.3) > 0.1) {
+          // reeds on the bank and moss hanging off the lip
+          const base = Y - lift + T * 0.75;
+          ctx.strokeStyle = th.wallEdge;
+          ctx.lineWidth = Math.max(1, T * 0.04);
+          ctx.globalAlpha = 0.8;
+          ctx.beginPath();
+          for (let q = 0; q < 4; q++) {
+            const hx = X + T * (0.2 + 0.2 * q + 0.06 * noise(i + q));
+            const hh = T * (0.3 + 0.3 * (noise(i + q * 5) * 0.5 + 0.5));
+            const sway = Math.sin(t * 1.3 + i + q) * T * 0.04;
+            ctx.moveTo(hx, base);
+            ctx.quadraticCurveTo(hx + sway * 0.5, base - hh * 0.6, hx + sway + T * 0.05, base - hh);
+          }
+          ctx.stroke();
+          if (below !== T_WALL) {
+            ctx.fillStyle = th.wallLip;
+            for (let q = 0; q < 3; q++) {
+              const mx = X + T * (0.15 + 0.3 * q + 0.08 * noise(i * 3 + q));
+              const ml = T * (0.12 + 0.18 * (noise(i + q * 11) * 0.5 + 0.5));
+              ctx.fillRect(mx, Y + T - lift - 1, T * 0.07, ml);
+            }
+          }
+          ctx.globalAlpha = 1;
+        }
       }
       // things standing in this row
       for (const p of poisByRow.get(y) ?? []) this.drawPoi(ctx, r, p, t);

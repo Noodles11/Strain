@@ -16,6 +16,12 @@ export interface Intent {
   allyStrength?: number;
   /** Heal the most hurt other enemy by this much (plus Will). */
   healAlly?: number;
+  /** Rot put on you (plus Will ÷ 4). */
+  rot?: number;
+  /** Heals itself for the HP its blows take. */
+  drain?: boolean;
+  /** Straight through plating. */
+  pierce?: boolean;
   line?: string;
 }
 
@@ -46,6 +52,10 @@ export interface EnemyDef {
   countdown?: { at: number; blast: number };
   /** Extra Codons for killing it. */
   bonusCodons?: number;
+  /** Bursts when it dies: this much Rot on you. */
+  deathRot?: number;
+  /** Heals this much at the start of each of its turns. */
+  regen?: number;
 }
 
 export const ENEMIES: Record<string, EnemyDef> = {
@@ -226,6 +236,115 @@ export const ENEMIES: Record<string, EnemyDef> = {
         { label: 'Spectrum', attack: 5, hits: 2 },
         { label: 'Shed', summon: 'shardling', plate: 2 },
         { label: 'Prism Beam', attack: 15 },
+      ],
+    },
+  },
+
+  // ---- Mireth, the Drowned Forest ----
+  leech: {
+    id: 'leech', name: 'Leech Swarm', hp: 10, biomass: 4, might: 1, hide: 0, speed: 6, will: 0,
+    flavor: 'A knot of black leeches that moves as one. Every bite makes it fatter.',
+    pattern: [
+      { label: 'Latch', attack: 2, hits: 2, drain: true },
+      { label: 'Swell', attack: 3, drain: true },
+    ],
+  },
+  croaker: {
+    id: 'croaker', name: 'Bog Croaker', hp: 16, biomass: 5, might: 2, hide: 0, speed: 3, will: 2,
+    flavor: 'A toad the size of a dog, full of something green. It spits it.',
+    pattern: [
+      { label: 'Spit', rot: 2 },
+      { label: 'Tongue', attack: 5 },
+      { label: 'Bloat', plate: 2, rot: 1 },
+    ],
+  },
+  puffcap: {
+    id: 'puffcap', name: 'Puffcap', hp: 8, biomass: 3, might: 0, hide: 0, speed: 1, will: 2, deathRot: 3,
+    flavor: 'A walking mushroom, swollen with spores. Killing it is the dangerous part.',
+    pattern: [
+      { label: 'Swell', plate: 1 },
+      { label: 'Spore', rot: 1, weak: 1 },
+    ],
+  },
+  moth: {
+    id: 'moth', name: 'Gravemoth', hp: 14, biomass: 4, might: 2, hide: 0, speed: 7, will: 3,
+    flavor: 'Wings like wet paper. Its dust makes wounds go bad.',
+    pattern: [
+      { label: 'Dust', weak: 1, rot: 1 },
+      { label: 'Flutter', attack: 3, hits: 3 },
+    ],
+  },
+  hound: {
+    id: 'hound', name: 'Moss Hound', hp: 22, biomass: 6, might: 3, hide: 0, speed: 5, will: 1,
+    flavor: 'Moss grows where its fur fell out. It hunts in pairs and it does not tire.',
+    pattern: [
+      { label: 'Snap', attack: 5 },
+      { label: 'Worry', attack: 3, hits: 2, rot: 1 },
+      { label: 'Howl', strength: 2, line: 'something answers it, far off' },
+    ],
+  },
+  eel: {
+    id: 'eel', name: 'Lantern Eel', hp: 20, biomass: 6, might: 3, hide: 0, speed: 6, will: 3,
+    flavor: 'It rises out of the black water glowing. Its shock goes straight through armour.',
+    pattern: [
+      { label: 'Glow', plate: 1, strength: 1 },
+      { label: 'Shock', attack: 6, pierce: true },
+    ],
+  },
+  stilt: {
+    id: 'stilt', name: 'Stiltwader', hp: 30, biomass: 8, might: 4, hide: 0, speed: 5, will: 1,
+    flavor: 'Three metres of leg and beak, standing so still in the water you walk right up to it.',
+    pattern: [
+      { label: 'Wade', plate: 2 },
+      { label: 'Spear', attack: 11 },
+      { label: 'Peck', attack: 4, hits: 2 },
+    ],
+  },
+  knot: {
+    id: 'knot', name: 'Root Knot', hp: 36, biomass: 7, might: 2, hide: 2, speed: 1, will: 2,
+    flavor: 'A tangle of mangrove roots that decided to move. It holds you while it thinks.',
+    pattern: [
+      { label: 'Entangle', weak: 1, expose: 1 },
+      { label: 'Grow', plate: 4 },
+      { label: 'Lash', attack: 8 },
+    ],
+  },
+  stag: {
+    id: 'stag', name: 'Mossback Stag', hp: 60, biomass: 14, might: 4, hide: 2, speed: 4, will: 3, rank: 'elite', regen: 4,
+    flavor: 'A forest on four legs. Whatever you cut off it grows back by morning.',
+    pattern: [
+      { label: 'Graze', plate: 3 },
+      { label: 'Gore', attack: 13 },
+      { label: 'Trample', attack: 6, hits: 2 },
+      { label: 'Bellow', weak: 1, strength: 2, line: 'the trees shake with it' },
+    ],
+  },
+  queen: {
+    id: 'queen', name: 'Leech Mother', hp: 52, biomass: 14, might: 3, hide: 1, speed: 3, will: 4, rank: 'elite',
+    flavor: 'Bloated, patient, pale. Everything that bites you in the water came out of her.',
+    pattern: [
+      { label: 'Brood', summon: 'leech', plate: 2 },
+      { label: 'Engorge', attack: 8, drain: true },
+      { label: 'Bloodrain', attack: 4, hits: 2, rot: 1 },
+    ],
+  },
+  titan: {
+    id: 'titan', name: 'The Drowned Titan', hp: 120, biomass: 22, might: 5, hide: 2, speed: 2, will: 4, rank: 'boss', regen: 3,
+    flavor: 'A seed-probe crew member, grown into the forest for a hundred years. The forest grew into it too.',
+    pattern: [
+      { label: 'Surge', attack: 7, hits: 2 },
+      { label: 'Silt', rot: 3, weak: 1, line: 'THE WATER REMEMBERS YOU' },
+      { label: 'Undertow', attack: 16 },
+      { label: 'Rootbed', plate: 5 },
+    ],
+    phase2: {
+      below: 0.5,
+      line: 'STAY. STAY WITH US. GROW.',
+      pattern: [
+        { label: 'Seed', summon: 'puffcap', plate: 3 },
+        { label: 'Drown', attack: 12, rot: 2 },
+        { label: 'Grasp', attack: 7, hits: 2, drain: true },
+        { label: 'Bloom', rot: 3, allyStrength: 2 },
       ],
     },
   },

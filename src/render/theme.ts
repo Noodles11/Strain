@@ -22,6 +22,8 @@ export interface Theme {
   solidFloor: boolean;
   /** Decorative snow drifts on the floor. */
   snow: boolean;
+  /** Reeds and hanging moss on the walls (a drowned forest). */
+  reeds?: boolean;
 }
 
 export const THEMES: Record<string, Theme> = {
@@ -38,6 +40,13 @@ export const THEMES: Record<string, Theme> = {
     skyTop: '#070d15', skyLow: '#1a2c3e', groundTop: '#243a4c', groundLow: '#0e1721', groundLine: '#335068',
     ledge: '#28404f', ledgeTop: '#3f6376', accent: '#b06fe0', crystals: true,
     solidFloor: true, snow: true,
+  },
+  mireth: {
+    floor: '#2c3a24', floorLine: '#37472d', wallTop: '#46583a', wallEdge: '#a9c25a', wallFace: '#0e140c', wallLip: '#2e3d22',
+    hazard: '#2a5866', hazardFleck: '#8fc4bc', debris: '#3b2f1f',
+    skyTop: '#090e0a', skyLow: '#1a271b', groundTop: '#24301d', groundLow: '#0f160d', groundLine: '#33432a',
+    ledge: '#2c3822', ledgeTop: '#445536', accent: '#d27a64', crystals: false,
+    solidFloor: true, snow: false, reeds: true,
   },
 };
 

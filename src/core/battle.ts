@@ -41,6 +41,8 @@ export interface Foe {
   slept?: number;
   /** Incinerator: heat so far. */
   heat?: number;
+  /** Rot: this much damage at the start of its turn, then one less. */
+  rot?: number;
   /** Veteran attack bonus from clones' past kills of this kind. */
   vet?: number;
   /** A faint or hulking specimen (HP rolled low or high). */
@@ -55,6 +57,8 @@ export interface BattlePlayer {
   keep: number;
   weak: number;
   expose: number;
+  /** Rot: this much damage at the start of your turn, through plating, then one less. */
+  rot?: number;
 }
 
 export type BattleEv =
@@ -425,6 +429,19 @@ function runFx(s: BattleState, fx: Effect<number>[], card: CardInst, targetUid: 
         } else if (f) ev.push({ k: 'text', s: `${NAME(f)} has no plating to break.` });
         break;
       }
+      case 'rot': {
+        const victims = e.aoe ? aliveFoes(s) : [target()].filter(Boolean) as Foe[];
+        if (e.v <= 0) break;
+        for (const f of victims) { f.rot = (f.rot ?? 0) + e.v; ev.push({ k: 'status', who: f.uid }); }
+        ev.push({ k: 'text', s: e.aoe ? `Rot spreads through them. +${e.v}.` : `${NAME(victims[0])} starts to rot. +${e.v}.` });
+        break;
+      }
+      case 'healPerRot': {
+        const n = aliveFoes(s).reduce((a, f) => a + (f.rot ?? 0), 0);
+        if (n) healPlayer(s, e.v * n, ev);
+        else ev.push({ k: 'text', s: 'Nothing is rotting. Nothing to feed on.' });
+        break;
+      }
       case 'empower': s.empower += e.v; ev.push({ k: 'text', s: `Next card +${e.v}.` }); break;
       case 'healPerTagged': {
         const n = aliveFoes(s).filter((f) => f.tag > 0).length;
@@ -503,6 +520,11 @@ function killFoe(s: BattleState, f: Foe, ev: BattleEv[]) {
   f.alive = false;
   s.kills += 1;
   ev.push({ k: 'die', uid: f.uid }, { k: 'text', s: `${NAME(f)} collapses!` });
+  const burst = ENEMIES[f.id].deathRot;
+  if (burst) {
+    s.player.rot = (s.player.rot ?? 0) + burst;
+    ev.push({ k: 'status', who: 'p' }, { k: 'text', s: `It bursts in a cloud of spores. Rot +${burst}.` });
+  }
   if (ENEMIES[f.id].splits && !f.split) {
     for (let i = 0; i < 2 && aliveFoes(s).length < 4; i++) {
       const nf = makeFoe(f.id, f.tier, s.nextUid++, 1);
@@ -562,7 +584,21 @@ function checkEnd(s: BattleState, ev: BattleEv[]) {
 
 // ---- Turns ----
 
-function startPlayerTurn(s: BattleState, rng: Rng, _ev: BattleEv[], drawPenalty = 0) {
+function startPlayerTurn(s: BattleState, rng: Rng, ev: BattleEv[], drawPenalty = 0) {
+  const rot = s.player.rot ?? 0;
+  if (rot > 0) {
+    const lost = hpLost(s.player.hp, rot);
+    s.player.hp -= rot;
+    s.player.rot = rot - 1;
+    s.lostHp = true;
+    ev.push({ k: 'hitPlayer', n: lost }, { k: 'text', s: `Rot eats at you. −${rot}.` });
+    if (s.player.hp <= 0) {
+      s.player.hp = 0;
+      s.phase = 'lost';
+      ev.push({ k: 'text', s: 'Your print fails.' });
+      return;
+    }
+  }
   s.turn += 1;
   s.turnPlays = 0;
   s.player.plate = s.player.keep;
@@ -602,9 +638,9 @@ export function currentIntent(f: Foe, s?: BattleState): Intent {
 }
 
 /** Final numbers of a foe's next move, before your plating. */
-export function intentNumbers(s: BattleState, f: Foe): { attack: number; hits: number; plate: number; weak: number; expose: number; strength: number; summon?: string; ally: number; healAlly: number; label: string } {
+export function intentNumbers(s: BattleState, f: Foe): { attack: number; hits: number; plate: number; weak: number; expose: number; strength: number; summon?: string; ally: number; healAlly: number; rot: number; drain: boolean; pierce: boolean; label: string } {
   const def: EnemyDef = ENEMIES[f.id];
-  if (f.sick || f.asleep) return { label: f.asleep ? 'Asleep' : 'Summoned', attack: 0, hits: 1, plate: 0, weak: 0, expose: 0, strength: 0, ally: 0, healAlly: 0 };
+  if (f.sick || f.asleep) return { label: f.asleep ? 'Asleep' : 'Summoned', attack: 0, hits: 1, plate: 0, weak: 0, expose: 0, strength: 0, ally: 0, healAlly: 0, rot: 0, drain: false, pierce: false };
   const it = currentIntent(f, s);
   let attack = 0;
   if (it.attack !== undefined) {
@@ -624,6 +660,9 @@ export function intentNumbers(s: BattleState, f: Foe): { attack: number; hits: n
     summon: it.summon,
     ally: it.allyStrength ?? 0,
     healAlly: it.healAlly ? it.healAlly + Math.floor(will / 2) : 0,
+    rot: it.rot ? it.rot + Math.floor(will / 4) : 0,
+    drain: !!it.drain,
+    pierce: !!it.pierce,
   };
 }
 
@@ -641,6 +680,19 @@ function enemyTurn(s: BattleState, rng: Rng, ev: BattleEv[]) {
       continue;
     }
     const def = ENEMIES[f.id];
+    if ((f.rot ?? 0) > 0) {
+      const d = f.rot!;
+      const lost = hpLost(f.hp, d);
+      f.hp -= d;
+      f.rot = d - 1;
+      ev.push({ k: 'hitFoe', uid: f.uid, n: lost }, { k: 'text', s: `${NAME(f)} rots. −${d}.` });
+      if (f.hp <= 0) { killFoe(s, f, ev); if (s.player.hp <= 0) break; continue; }
+    }
+    if (def.regen && f.hp < f.maxHp && !f.asleep) {
+      const got = Math.min(def.regen + Math.floor(f.tier / 2), f.maxHp - f.hp);
+      f.hp += got;
+      ev.push({ k: 'healFoe', uid: f.uid, n: got }, { k: 'text', s: `${NAME(f)} grows back. +${got}.` });
+    }
     if (f.asleep && def.sleeps) {
       f.slept = (f.slept ?? 0) + 1;
       if (f.slept >= def.sleeps.wakeAfter) wake(f, ev, 'stirs awake');
@@ -677,6 +729,7 @@ function enemyTurn(s: BattleState, rng: Rng, ev: BattleEv[]) {
     }
     if (n.weak) { s.player.weak += n.weak; ev.push({ k: 'status', who: 'p' }, { k: 'text', s: 'You are Weak.' }); }
     if (n.expose) { s.player.expose += n.expose; ev.push({ k: 'status', who: 'p' }, { k: 'text', s: 'You are Exposed.' }); }
+    if (n.rot) { s.player.rot = (s.player.rot ?? 0) + n.rot; ev.push({ k: 'status', who: 'p' }, { k: 'text', s: `Rot takes hold. +${n.rot}.` }); }
     if (n.summon && aliveFoes(s).length < 3) {
       const nf = makeFoe(n.summon, f.tier, s.nextUid++, 1);
       nf.split = true;
@@ -688,7 +741,7 @@ function enemyTurn(s: BattleState, rng: Rng, ev: BattleEv[]) {
       ev.push({ k: 'strike', uid: f.uid, hits: n.hits });
       for (let h = 0; h < n.hits; h++) {
         const raw = n.attack;
-        const d = Math.max(0, raw - s.player.plate);
+        const d = n.pierce ? raw : Math.max(0, raw - s.player.plate);
         let lostNow = 0;
         if (raw > 0 && d === 0) s.stopped += 1;
         if (d > 0) {
@@ -697,7 +750,12 @@ function enemyTurn(s: BattleState, rng: Rng, ev: BattleEv[]) {
           s.lostHp = true;
           for (const c of s.hand) if (CARDS[c.id].dyn === 'scartissue') s.surge.mgt += 1;
         }
-        ev.push({ k: 'hitPlayer', n: lostNow }, { k: 'text', s: d > 0 ? `You take ${d}.` : 'Your plating holds.' });
+        ev.push({ k: 'hitPlayer', n: lostNow }, { k: 'text', s: d > 0 ? `You take ${d}.${n.pierce && s.player.plate > 0 ? ' Straight through your plating.' : ''}` : 'Your plating holds.' });
+        if (n.drain && lostNow > 0 && f.hp < f.maxHp) {
+          const got = Math.min(lostNow, f.maxHp - f.hp);
+          f.hp += got;
+          ev.push({ k: 'healFoe', uid: f.uid, n: got }, { k: 'text', s: `${NAME(f)} drinks. +${got}.` });
+        }
         if (s.player.hp <= 0) break;
         if (d > 0 && s.mods.thorns && f.alive) {
           const lost = hpLost(f.hp, s.mods.thorns);
@@ -812,6 +870,8 @@ function value(s: BattleState, c: CardInst, guard: boolean, low: boolean): numbe
       case 'draw': v += e.v * 3; break;
       case 'energy': v += e.v * 4; break;
       case 'weak': case 'expose': v += e.v * 2; break;
+      case 'rot': v += e.v * 1.6 * (e.aoe ? aliveFoes(s).length : 1); break;
+      case 'healPerRot': v += low ? e.v * aliveFoes(s).reduce((a, f) => a + (f.rot ?? 0), 0) * 1.5 : 0; break;
       case 'tag': v += 1; break;
       case 'donor': case 'cannibal': v += s.hand.length > 1 ? 3 : 0; break;
       case 'surge': v += 3; break;

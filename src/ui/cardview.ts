@@ -46,6 +46,8 @@ const TH_ICONS: [RegExp, (m: RegExpMatchArray) => string][] = [
   [/^Heal all of it$/, () => icon('drain') + '100%'],
   [/^Heal (\d+) per tagged enemy$/, (m) => icon('heal') + m[1] + '/' + icon('tag')],
   [/^Plating ×(\d+)$/, (m) => icon('shatter') + '×' + m[1]],
+  [/^Weak (\d+)$/, (m) => icon('weak') + m[1]],
+  [/^Heal (\d+) per Rot$/, (m) => icon('heal') + m[1] + '/' + icon('rot')],
   [/^\+1 item$/, () => icon('pry') + '+1'],
   [/^Never fails$/, () => icon('surge') + '✓'],
   [/^Plating stays 1 extra turn$/, () => icon('plate') + '+1 turn'],

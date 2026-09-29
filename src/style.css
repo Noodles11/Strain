@@ -90,6 +90,7 @@ button { font: inherit; color: inherit; }
 .ic-energy { color: var(--sodium); }
 .ic-bio { color: var(--flesh); }
 .ic-weak, .ic-expose, .ic-surge, .ic-drain { color: var(--abr); }
+.ic-rot { color: #a9c25a; }
 .card::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 4px; background: var(--tint, var(--dim)); }
 .card .cost { position: absolute; top: 6px; left: 5px; font-family: var(--display); font-size: 20px; line-height: 1; color: var(--sodium); }
 .card .cost.o2 { color: var(--foc); }

@@ -16,12 +16,15 @@ const CARD_FX: Record<string, FxKind> = {
   brace: 'shield', callus: 'shield', crystalskin: 'shield', scartissue: 'shield', echo: 'shield', grief: 'shield',
   clot: 'heal', poultice: 'heal', knit: 'heal',
   adrenal: 'spark', donor: 'swirl', flask: 'swirl',
+  rotneedle: 'dart', symbiote: 'heal', canopycut: 'pellets', sapgraft: 'drain',
 };
 
 const ENEMY_FX: Record<string, FxKind> = {
   drone: 'bolt', prism: 'beam', choir: 'beam', geode: 'beam', refractor: 'beam',
   tick: 'bite', shardling: 'bite', bloom: 'slam', husk: 'slam', crawler: 'slam', first: 'slam',
   drip: 'dart', subject: 'bite', sleeper: 'slam', incinerator: 'bolt',
+  leech: 'bite', croaker: 'dart', puffcap: 'dart', moth: 'claw', hound: 'bite', eel: 'bolt', stilt: 'claw',
+  knot: 'slam', stag: 'slam', queen: 'bite', titan: 'slam',
 };
 
 export function cardFx(id: string): FxKind {

@@ -41,6 +41,11 @@ export const LOGS: Record<string, { title: string; text: string }> = {
   'kessra-3': { title: 'Resonance note', text: 'Acts repeated near the lattice repeat themselves. Blows. Words. Deaths. The cave is practising.' },
   'kessra-4': { title: 'Probe K, final', text: 'The shardlings are not animals. They are the cave, walking. It is sampling us back.' },
   'kessra-5': { title: 'The Prism Mother', text: 'She holds every print in glass. Yours is the newest. She was waiting to see how it ends.' },
+  'mireth-1': { title: 'Probe M, landing', text: 'Seed-probe down in shallow water. Hull integrity fine. The water is rising. The water is not water.' },
+  'mireth-2': { title: 'Fruiting body', text: 'Sample from the canopy: human keratin, human enamel, grown like fruit. The forest is printing us back.' },
+  'mireth-3': { title: 'Root recording', text: 'The roots carry a signal. Slowed down, it is a crew roll call. Every name answers "here".' },
+  'mireth-4': { title: 'A clone’s last note', text: 'Knee deep. Can’t pull free. It doesn’t hurt. That is the worst part. It feels like being held.' },
+  'mireth-5': { title: 'The Drowned Titan', text: 'Crew member four. Stayed behind to watch the probe. The forest kept her. She kept watching.' },
 };
 
 export const LOG_CODONS = 5;
@@ -141,6 +146,45 @@ export const KESSRA_EVENTS: EventDef[] = [
       { label: 'Harvest them', check: { t: 'hde', at: 5 }, win: { text: 'They cut, but not deep. Good biomass.', biomass: 10 }, lose: { text: 'They swarm your arms.', hp: -7, biomass: 3 } },
       { label: 'Let them touch you', check: { t: 'abr', at: 6 }, win: { text: 'They map you. When they let go, your skin remembers glass.', implant: 'boneplate', log: 'kessra-4' }, lose: { text: 'They decide you are food.', hp: -6 } },
       { label: 'Back away', win: { text: 'They go still again.' } },
+    ],
+  },
+];
+
+export const MIRETH_EVENTS: EventDef[] = [
+  {
+    id: 'sunkprobe', title: 'The sunken probe',
+    text: 'A seed-probe, nose down in black water. Its hatch light still blinks.',
+    options: [
+      { label: 'Dive for its core', check: { t: 'met', at: 7 }, win: { text: 'Lungs burning, you pull the core free.', log: 'mireth-1', codons: 3 }, lose: { text: 'The water fills you before you find it.', hp: -6 } },
+      { label: 'Hook it out', check: { t: 'mgt', at: 6 }, win: { text: 'It comes up streaming weed, and something inside still works.', implant: 'random' }, lose: { text: 'The line snaps back into your hands.', hp: -4 } },
+      { label: 'Leave it', win: { text: 'The light blinks on behind you.' } },
+    ],
+  },
+  {
+    id: 'fruit', title: 'Pale fruit',
+    text: 'Swollen fruit hangs from the branches, warm to the touch. Some of them have fingernails.',
+    options: [
+      { label: 'Eat one', check: { t: 'met', at: 6 }, win: { text: 'Your body knows exactly what to do with it.', hp: 8, somatic: 'met' }, lose: { text: 'It was not fruit.', hp: -6 } },
+      { label: 'Cut one open', check: { t: 'foc', at: 6 }, win: { text: 'You study it carefully. You wish you hadn’t.', log: 'mireth-2', biomass: 6 }, lose: { text: 'It bursts. Most of it is lost in the mud.', biomass: 3, hp: -3 } },
+      { label: 'Walk on', win: { text: 'They sway after you, though there is no wind.' } },
+    ],
+  },
+  {
+    id: 'rootchoir', title: 'The whispering roots',
+    text: 'The roots here murmur. When you stop, you hear your own voice in them.',
+    options: [
+      { label: 'Listen', check: { t: 'foc', at: 6 }, win: { text: 'Names. A roll call. You write it down.', log: 'mireth-3', codons: 3 }, lose: { text: 'The voice goes on too long. Your head aches.', hp: -3 } },
+      { label: 'Answer them', check: { t: 'abr', at: 7 }, win: { text: 'They take your answer in, and give something back.', somatic: 'abr' }, lose: { text: 'The roots tighten round your ankles.', hp: -7 } },
+      { label: 'Burn them out', check: { t: 'mgt', at: 5 }, win: { text: 'They crackle and go quiet. Good fuel in the ash.', biomass: 8, card: 'tac' }, lose: { text: 'Wet wood. It just smokes, and you breathe it.', hp: -4 } },
+    ],
+  },
+  {
+    id: 'sinking', title: 'The sinking clone',
+    text: 'Another print, chest deep in the mud, still. Its number is close to yours.',
+    options: [
+      { label: 'Pull it out', check: { t: 'mgt', at: 7 }, win: { text: 'It comes free all at once. Nothing left to save, plenty to use.', biomass: 12, card: 'tac' }, lose: { text: 'The mud takes a boot, and some skin with it.', hp: -5 } },
+      { label: 'Search its pockets', check: { t: 'rfx', at: 5 }, win: { text: 'A notebook, dry in a sealed pouch, and its kit.', log: 'mireth-4', card: 'exp' }, lose: { text: 'The mud shifts. You pull back just in time.', hp: -2 } },
+      { label: 'Say its number', win: { text: 'It doesn’t answer. You feel a little better anyway.', codons: 1 } },
     ],
   },
 ];
