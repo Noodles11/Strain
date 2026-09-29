@@ -4,6 +4,7 @@ import { ENEMIES } from '../core/enemies';
 import { LOGS } from '../core/events';
 import { IMPLANTS } from '../core/implants';
 import { planetDepth, PLANETS } from '../core/planets';
+import { foeInfo, playerInfo } from './unitinfo';
 import { canRaise, loadMeta, markLanded, newMeta, raise, RUN_KEY, saveMeta, settleRun, type Meta } from '../core/meta';
 import {
   actionsAt, bEnd, bFlee, bPick, bPlay, canExcise, chartOptions, goHome, here, land, describeAt, doAction, eatValue, excise, exciseCost, expCard, expUsable, isInteractable, isSelfCard, migrateRun,
@@ -137,6 +138,18 @@ export class App {
     this.root.appendChild(layer);
   }
 
+  /** A details popup over everything (enemy or clone in battle). */
+  private showInfo(html: string) {
+    this.root.querySelector('.detail-layer')?.remove();
+    const layer = document.createElement('div');
+    layer.className = 'detail-layer sheet-wrap';
+    layer.innerHTML = `<div class="sheet frame info">${html}<button class="btn" data-close>Close</button></div>`;
+    layer.addEventListener('click', (e) => {
+      if (e.target === layer || (e.target as HTMLElement).closest('[data-close]')) layer.remove();
+    });
+    this.root.appendChild(layer);
+  }
+
   // ---------------------------------------------------------------- save
 
   private saveRun() {
@@ -251,6 +264,16 @@ export class App {
     this.drawX = this.run!.x;
     this.drawY = this.run!.y;
     this.wv.snap();
+    // resuming mid-fight: show the saved HP straight away, not the empty display from before the load
+    const b = this.run!.battle;
+    if (b) {
+      this.queue = [];
+      this.pendingAct.clear();
+      this.hidden.clear();
+      this.dispP = b.player.hp;
+      this.dispFoe.clear();
+      for (const f of b.foes) this.dispFoe.set(f.uid, f.hp);
+    }
     this.syncLayout();
   }
 
@@ -729,9 +752,13 @@ export class App {
           ${this.bar(hp, f.maxHp)}<div class="row2"><span class="intent">${intent || '&nbsp;'}</span></div></div>
           ${tabs.length ? `<div class="tab">${tabs.map((x) => `<span>${x}</span>`).join('')}</div>` : ''}</div>`;
       }).join('');
+      // tapping a plate aims at that enemy and opens its details
       plates.querySelectorAll<HTMLElement>('[data-f]').forEach((el) => el.addEventListener('click', () => {
-        this.bv.target = Number(el.dataset.f);
+        const f = b.foes.find((q) => q.uid === Number(el.dataset.f));
+        if (!f) return;
+        if (f.alive) this.bv.target = f.uid;
         this.refreshBattle();
+        this.showInfo(foeInfo(b, f));
       }));
     }
     const me = this.root.querySelector<HTMLElement>('.unit.me');
@@ -752,6 +779,10 @@ export class App {
       me.innerHTML = `${tabs.length ? `<div class="tab">${tabs.map((x) => `<span>${x}</span>`).join('')}</div>` : ''}
         <div class="plate"><div class="top"><span class="nm">${cloneName(r.clone)}</span><span class="hpn">${hp}<small>/${p.maxHp}</small></span></div>
         ${this.bar(hp, p.maxHp)}<div class="row2"><span class="st">${icon('bio')}${b.biomass}</span></div></div>`;
+      if (!me.dataset.bound) {
+        me.dataset.bound = '1';
+        me.addEventListener('click', () => { const rr = this.run; if (rr?.battle) this.showInfo(playerInfo(rr, rr.battle, cloneName(rr.clone))); });
+      }
     }
     const tb = this.root.querySelector('.textbox');
     if (tb) {
