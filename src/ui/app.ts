@@ -674,8 +674,6 @@ export class App {
     }).join('');
     handEl.querySelectorAll<HTMLElement>('[data-u]').forEach((el) => {
       const u = Number(el.dataset.u);
-      el.style.flex = '1';
-      el.style.minWidth = '0';
       press(el, () => this.tapExp(u));
     });
   }
@@ -770,7 +768,7 @@ export class App {
         const pick = !!b.pending && c.uid !== b.pending.uid;
         const tt = { ...t };
         for (const k of TRAITS) tt[k] += b.surge[k];
-        return `<div data-c="${c.uid}" style="flex:1;min-width:0">${cardHtml(c.id, tt, {
+        return `<div data-c="${c.uid}">${cardHtml(c.id, tt, {
           donor: c.donor, dmgBonus: bonus.dmg + b.empower, plateBonus: bonus.plate, off: !ok && !pick, fleeting: c.fleeting, extraClass: pick ? 'pick' : '',
         })}</div>`;
       }).join('');

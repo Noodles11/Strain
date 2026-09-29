@@ -64,6 +64,8 @@ button { font: inherit; color: inherit; }
 .dock-btns { display: flex; gap: 8px; }
 .dock-btns .btn { flex: 1; }
 .exp-hand { display: flex; gap: 6px; }
+/* cards keep one fixed width, a fifth of the row, however few are in hand; fewer cards just leave space on the right */
+.exp-hand > div { flex: 0 1 calc((100% - 4 * 6px) / 5); min-width: 0; display: flex; }
 .exp-hand .card { flex: 1; min-width: 0; }
 
 /* ---------- cards ---------- */
@@ -127,6 +129,7 @@ b.foc { color: var(--foc); } b.met { color: var(--met); } b.abr { color: var(--a
 .textbox .more { float: right; animation: blink 0.8s steps(2) infinite; color: var(--sodium); }
 @keyframes blink { 50% { opacity: 0; } }
 .hand { display: flex; gap: 5px; }
+.hand > div { flex: 0 1 calc((100% - 4 * 5px) / 5); min-width: 0; display: flex; }
 .hand .card { flex: 1; min-width: 0; min-height: 150px; }
 .hand.busy .card { opacity: 0.55; pointer-events: none; }
 .controls { display: flex; gap: 8px; align-items: center; }
