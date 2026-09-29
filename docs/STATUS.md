@@ -125,6 +125,24 @@ Plates read ASLEEP, FLEES IN n, BLOWS IN n and, on the last turn, the blast dama
 - Printed-stock texture (dot screen, fibres, vignette); the card's plate emblem sits large and faint behind the text
   in its trait colour, replacing the corner glyph.
 
+## Look: textures, decorations, comic lighting
+
+Everything below is generated from tile hashes (`src/render/texture.ts`, `src/render/light.ts`), so a spot always looks the same.
+
+- **Textures:** each planet has 6 floor, wall-top and wall-face variants, baked once per tile size: riveted deck plates, oil
+  stains, hazard hatches, pipes and grilles on the Derelict; mottled ice rock, hairline cracks and faceted walls on Kessra;
+  mud, leaves, moss mats, bark and hanging roots on Mireth.
+- **Floor decals** (about 1 open tile in 5), the same on the map and in battle: cables, blood smears, grates, papers; shard
+  clusters, crack stars, frost rings, glowing buds; black puddles with a moving glint, roots, toadstool rings, lily pads.
+- **Walls in battle** carry conduits, rust runs, grilles and lamps (Derelict), glowing veins (Kessra), moss and glowing fungus (Mireth).
+- **Comic lighting:** the dark is cut away around each light in three hard bands (lit, half-lit, shadow) instead of a smooth
+  falloff; what stays dark gets a halftone dot screen, in a cold blue-black tint. Lights: the clone's own glow (smaller in dark
+  sections), wall lamps (some stutter, some are dying), vents, events, pods, terminals, vats, the ship, beacons, hazard pools,
+  and a pulsing eerie glow around the boss. On the map, walls throw hard shadow bands to the lower right and get ink outlines.
+- **Battle:** a spot on the enemies, the clone's glow, the wall lamps, and a flickering eerie light far down the corridor
+  (emergency red, cave violet, swamp green); sprites get an ink halo and a thin rim of that eerie colour; mist rolls along the floor.
+- Motes drift through the light on the map.
+
 ## Veterans and variation
 
 - The meta keeps a tally of every mob killed, by kind, across all clones (`Meta.slain`); a run adds its own kills as it goes.

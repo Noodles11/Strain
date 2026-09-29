@@ -3,7 +3,9 @@ import { drawCloneTop } from './clone';
 import { INK } from './palette';
 import { noise } from './sketch';
 import { SNOW, SNOW_SHADE, snowAt, theme } from './theme';
-import { inStorm, inView, type RunState } from '../core/run';
+import { decalAt, floorTex, hash, wallFaceTex, wallTopTex, type DecalShape } from './texture';
+import { EERIE, flicker, Lighting, type Light } from './light';
+import { inStorm, inView, isDark, type RunState } from '../core/run';
 import { gateAt, idx, T_FLOOR, T_GATE, T_HAZARD, T_WALL, type Mob, type Poi } from '../world/gen';
 
 
@@ -19,6 +21,7 @@ export class WorldView {
   T = 32;
   W = 0;
   H = 0;
+  private lighting = new Lighting();
 
   resize(W: number, H: number) {
     this.W = W;
@@ -78,6 +81,7 @@ export class WorldView {
       poisByRow.set(p.y, list);
     }
 
+    const lights: Light[] = [];
     for (let y = y0; y <= y1; y++) {
       // floors
       for (let x = x0; x <= x1; x++) {
@@ -88,8 +92,16 @@ export class WorldView {
         if (tile === T_WALL) continue;
         const X = this.sx(x);
         const Y = this.sy(y);
-        ctx.fillStyle = th.floor;
-        ctx.fillRect(X, Y, T + 0.5, T + 0.5);
+        ctx.drawImage(floorTex(w.planet, th, T, x, y), X, Y, T + 0.5, T + 0.5);
+        // hard comic shadows: light falls from the upper left, so walls throw a band onto the floor below and to their right
+        ctx.fillStyle = 'rgba(0,0,0,0.34)';
+        if (y > 0 && w.tiles[idx(w, x, y - 1)] === T_WALL) ctx.fillRect(X, Y, T + 0.5, T * 0.26);
+        if (x > 0 && w.tiles[idx(w, x - 1, y)] === T_WALL) {
+          ctx.beginPath();
+          ctx.moveTo(X, Y); ctx.lineTo(X + T * 0.22, Y + T * 0.2); ctx.lineTo(X + T * 0.22, Y + T + 0.5); ctx.lineTo(X, Y + T + 0.5);
+          ctx.fill();
+        }
+        if (tile === T_FLOOR) this.decal(ctx, decalAt(w.planet, x, y, t), X, Y);
         if (th.solidFloor || th.snow) {
           if (th.snow && tile === T_FLOOR) {
             for (const s of snowAt(x, y)) {
@@ -106,17 +118,8 @@ export class WorldView {
             }
           }
         }
-        if (!th.solidFloor) {
-          ctx.strokeStyle = th.floorLine;
-          ctx.lineWidth = 1;
-          ctx.strokeRect(X + 1.5, Y + 1.5, T - 3, T - 3);
-        }
-        if (!th.solidFloor && (x * 7 + y * 13) % 5 === 0) {
-          ctx.fillStyle = th.floorLine;
-          ctx.fillRect(X + 4, Y + 4, 2, 2);
-          ctx.fillRect(X + T - 6, Y + T - 6, 2, 2);
-        }
         if (tile === T_HAZARD) {
+          if (lights.length < 60 && hash(x, y, 3) < 0.5) lights.push({ x: X + T / 2, y: Y + T / 2, r: T * 1.2, color: th.hazard, power: 0.2 });
           const g = 0.35 + 0.15 * Math.sin(t * 2 + x + y * 0.7);
           ctx.fillStyle = th.hazard;
           ctx.globalAlpha = g;
@@ -146,19 +149,23 @@ export class WorldView {
         const Y = this.sy(y);
         const below = y + 1 < w.h ? w.tiles[idx(w, x, y + 1)] : T_WALL;
         if (below !== T_WALL) {
-          ctx.fillStyle = th.wallFace;
-          ctx.fillRect(X, Y + T - lift, T + 0.5, lift + 0.5);
-          ctx.fillStyle = '#23262a';
+          ctx.drawImage(wallFaceTex(w.planet, th, T, lift, x, y), X, Y + T - lift, T + 0.5, lift + 0.5);
+          ctx.fillStyle = '#0b0c0e';
           ctx.fillRect(X, Y + T - 3, T + 0.5, 3);
+          // the odd lamp, crystal or glowing fungus on a wall that faces open floor
+          if (hash(x, y, 90) < 0.14) this.wallLight(ctx, lights, w.planet, x, y, X + T / 2, Y + T - lift * 0.55, t);
         }
-        ctx.fillStyle = th.wallTop;
-        ctx.fillRect(X, Y - lift, T + 0.5, T + 0.5);
+        ctx.drawImage(wallTopTex(w.planet, th, T, x, y), X, Y - lift, T + 0.5, T + 0.5);
         ctx.fillStyle = th.wallEdge;
         if (y > 0 && w.tiles[idx(w, x, y - 1)] !== T_WALL) ctx.fillRect(X, Y - lift, T + 0.5, 2);
         if (below !== T_WALL) {
           ctx.fillStyle = th.wallLip;
           ctx.fillRect(X, Y + T - lift - 2, T + 0.5, 2);
         }
+        // ink outline where the block meets open ground
+        ctx.fillStyle = '#060708';
+        if (x > 0 && w.tiles[idx(w, x - 1, y)] !== T_WALL) ctx.fillRect(X - 1, Y - lift, 2, T + 0.5);
+        if (x + 1 < w.w && w.tiles[idx(w, x + 1, y)] !== T_WALL) ctx.fillRect(X + T - 1, Y - lift, 2, T + 0.5);
         if (th.crystals && noise(i * 3.1) > 0.35) {
           // a crystal cluster growing out of the rock
           const cx0 = X + T * (0.3 + 0.4 * (noise(i) * 0.5 + 0.5));
@@ -212,6 +219,8 @@ export class WorldView {
       }
     }
 
+    this.light(ctx, r, lights, px, py, t);
+
     // fog of war: a crossed hatch over ground never seen, never a blackout.
     // Once a tile has been revealed it stays clear for good.
     const thin: [number, number, number][] = [];
@@ -236,6 +245,85 @@ export class WorldView {
     }
     this.hatch(ctx, thin, 1);
     this.hatch(ctx, thick, -1);
+  }
+
+  /** Flat decal shapes on a floor tile. */
+  private decal(ctx: CanvasRenderingContext2D, shapes: DecalShape[], X: number, Y: number) {
+    const T = this.T;
+    for (const d of shapes) {
+      ctx.beginPath();
+      d.pts.forEach(([u, v], k) => (k ? ctx.lineTo(X + u * T, Y + v * T) : ctx.moveTo(X + u * T, Y + v * T)));
+      if (d.closed) ctx.closePath();
+      if (d.fill) { ctx.fillStyle = d.fill; ctx.fill(); }
+      if (d.stroke) { ctx.strokeStyle = d.stroke; ctx.lineWidth = d.width ?? 1; ctx.stroke(); }
+    }
+  }
+
+  /** A light fixture on a wall face, and the light it throws. */
+  private wallLight(ctx: CanvasRenderingContext2D, lights: Light[], planet: string, x: number, y: number, cx: number, cy: number, t: number) {
+    const T = this.T;
+    const e = EERIE[planet] ?? EERIE.derelict;
+    const seed = Math.floor(hash(x, y, 91) * 1000);
+    const on = flicker(t, seed);
+    const col = hash(x, y, 92) < 0.25 ? e.eerie : e.lamp;
+    if (planet === 'kessra') {
+      ctx.fillStyle = col;
+      ctx.globalAlpha = 0.5 + 0.5 * on;
+      ctx.beginPath(); ctx.moveTo(cx - T * 0.08, cy + T * 0.12); ctx.lineTo(cx, cy - T * 0.14); ctx.lineTo(cx + T * 0.08, cy + T * 0.12); ctx.fill();
+    } else if (planet === 'mireth') {
+      ctx.fillStyle = col;
+      ctx.globalAlpha = 0.45 + 0.55 * on;
+      for (let k = 0; k < 4; k++) { ctx.beginPath(); ctx.arc(cx + (k - 1.5) * T * 0.09, cy + (k % 2) * T * 0.06, T * 0.035, 0, Math.PI * 2); ctx.fill(); }
+    } else {
+      ctx.fillStyle = '#0b0c0e';
+      ctx.fillRect(cx - T * 0.16, cy - T * 0.06, T * 0.32, T * 0.12);
+      ctx.fillStyle = col;
+      ctx.globalAlpha = 0.25 + 0.75 * on;
+      ctx.fillRect(cx - T * 0.13, cy - T * 0.035, T * 0.26, T * 0.07);
+    }
+    ctx.globalAlpha = 1;
+    lights.push({ x: cx, y: cy + T * 0.5, r: T * 2.6, color: col, power: 0.75 * on });
+  }
+
+  /** Lights, comic shading and a few drifting motes over the finished map. */
+  private light(ctx: CanvasRenderingContext2D, r: RunState, lights: Light[], px: number, py: number, t: number) {
+    const T = this.T;
+    const w = r.world;
+    const e = EERIE[w.planet] ?? EERIE.derelict;
+    const cx = this.sx(px) + T / 2;
+    const cy = this.sy(py) + T / 2;
+    const dark = isDark(r, r.x, r.y);
+    // the clone carries a small pale light; in a dark section it barely reaches
+    lights.push({ x: cx, y: cy, r: T * (dark ? 3.6 : 6), power: 1 });
+    const on = (x: number, y: number) => Math.abs(x - px) < 9 && Math.abs(y - py) < 14 && w.seen[idx(w, x, y)];
+    for (const p of w.pois) {
+      if (p.hidden || !on(p.x, p.y)) continue;
+      const X = this.sx(p.x) + T / 2;
+      const Y = this.sy(p.y) + T / 2;
+      const glow: Record<string, [string, number] | undefined> = {
+        vent: p.used ? undefined : ['#d8cfb8', 1.6], event: p.used ? undefined : [INK.signal, 1.8], pod: [INK.cryo, 1.6],
+        terminal: [INK.toxin, 1.5], vat: [INK.sodium, 1.8], ship: [INK.toxin, 3.2], nest: p.used ? undefined : [INK.flesh, 1.4],
+        surgery: ['#d8cfb8', 1.4],
+      };
+      const g = glow[p.kind];
+      if (g) lights.push({ x: X, y: Y, r: T * g[1] * 1.6, color: g[0], power: 0.8 });
+    }
+    for (const m of w.mobs) {
+      if (!m.alive || m.kind !== 'boss' || !on(m.x, m.y)) continue;
+      lights.push({ x: this.sx(m.x) + T / 2, y: this.sy(m.y) + T / 2, r: T * 3, color: e.eerie, power: 0.6 + 0.2 * Math.sin(t * 1.5) });
+    }
+    for (const b of r.beacons) if (on(b.x, b.y)) lights.push({ x: this.sx(b.x) + T / 2, y: this.sy(b.y) + T / 2, r: T * 2.2, color: INK.sodium, power: 0.7 });
+    this.lighting.apply(ctx, this.W, this.H, lights, { dark: e.dark, tint: e.tint, dots: 0.32, glow: 0.5 });
+    // motes drifting through the light
+    ctx.fillStyle = w.planet === 'mireth' ? '#c4d86a' : w.planet === 'kessra' ? '#e6fcff' : '#d8cfb8';
+    for (let i = 0; i < 26; i++) {
+      const mx = ((hash(i, 1, 7) * this.W * 1.4 - this.camX * T * 0.35 + t * (6 + 8 * hash(i, 2, 7))) % (this.W * 1.4) + this.W * 1.4) % (this.W * 1.4) - this.W * 0.2;
+      const my = ((hash(i, 3, 7) * this.H - this.camY * T * 0.35 + Math.sin(t * 0.7 + i) * 12) % this.H + this.H) % this.H;
+      ctx.globalAlpha = 0.18 + 0.22 * (0.5 + 0.5 * Math.sin(t * 1.3 + i * 2));
+      const s = 1 + hash(i, 4, 7) * 1.5;
+      ctx.fillRect(mx, my, s, s);
+    }
+    ctx.globalAlpha = 1;
   }
 
   /** Diagonal lines over the given boxes, anchored to the world so they don't swim as the camera moves. */

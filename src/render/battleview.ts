@@ -5,6 +5,7 @@ import type { BattleState } from '../core/battle';
 import type { Traits } from '../core/traits';
 import { theme, type Theme } from './theme';
 import { cardFx, enemyFx, FxLayer, type Anchor } from './attackfx';
+import { EERIE, flicker, Lighting, withAlpha as withAlphaHex, type Light } from './light';
 import { PlaceView, type FightAt } from './placeview';
 import type { RunState } from '../core/run';
 
@@ -112,6 +113,7 @@ export class BattleView {
         this.place.pan = pan;
       }
       this.place.draw(ctx, place.run, place.at, W, H, t, th, this.cam);
+      this.mist(ctx, W, H, t, planet);
     } else this.drawBackdrop(ctx, W, H, t, th);
 
     const ease = (x: number) => 1 - (1 - x) ** 3;
@@ -128,6 +130,9 @@ export class BattleView {
     // further away = higher on the floor and smaller: one tile ahead for the front foe, two for the back row
     const slots: [number, number][] = place ? this.place.backSlots(place.run.world, place.at) : [[2, -0.8], [2, 0.8]];
     const frontPx = place ? this.place.ground(place.at, 1, 0)?.px ?? 1 : 1;
+    const eer = EERIE[planet] ?? EERIE.derelict;
+    this.rim = place ? eer.eerie : null;
+    let spot: Light | null = null;
     this.hit = [];
     this.anchors.clear();
     const drawFoe = (f: (typeof shown)[number], ahead: number, side: number) => {
@@ -167,6 +172,7 @@ export class BattleView {
       }
       ctx.restore();
       if (f.alive) this.hit.push({ uid: f.uid, x: x - u * 0.6, y: y - h0, w: u * 1.2, h: h0 });
+      if (f === front) spot = { x, y: y - h0 * 0.45, r: Math.max(W * 0.5, h0 * 2.2), power: 0.9 };
       if (f.alive && f === front && alive.length > 1 && show > 0.9) {
         ctx.fillStyle = INK.sodium;
         ctx.beginPath();
@@ -191,11 +197,25 @@ export class BattleView {
     ctx.restore();
     this.me = { x: px, y: py - cu * 0.55, h: cu * 0.8 };
     this.hand = { x: px + cu * 0.3, y: py - cu * 0.7, h: cu * 0.3 };
+    this.rim = null;
+    if (place && this.cam > 0.3) {
+      // comic lighting: a spot on the enemies, the clone's own glow, lamps on the walls, and something wrong down the corridor
+      const k2 = Math.min(1, (this.cam - 0.3) / 0.6);
+      const far = this.place.project(place.at.x + 0.5 + place.at.fx * 8, place.at.y + 0.5 + place.at.fy * 8, 0.9);
+      const lights: Light[] = [...this.place.lights];
+      if (spot) lights.push(spot);
+      lights.push({ x: px, y: py - cu * 0.6, r: W * 0.62, power: 0.95 });
+      if (far) lights.push({ x: far.x, y: far.y, r: W * 0.45, color: eer.eerie, power: 0.55 * flicker(t, 7) });
+      this.lighting.apply(ctx, W, H, lights, { dark: eer.dark * k2, tint: eer.tint, dots: 0.3 * k2, glow: 0.45 * k2 });
+    }
     this.fx.draw(ctx, t);
     ctx.restore();
   }
 
   private scratch: HTMLCanvasElement | null = null;
+  private lighting = new Lighting();
+  /** Rim-light colour for sprites this frame (the planet's eerie light), or none. */
+  private rim: string | null = null;
 
   /** Draw into a scratch layer the size of the box, then onto the scene. */
   private sprite(ctx: CanvasRenderingContext2D, bx: number, by: number, bw: number, bh: number, draw: (c: CanvasRenderingContext2D) => void) {
@@ -211,7 +231,38 @@ export class BattleView {
     c.setTransform(sc, 0, 0, sc, -bx * sc, -by * sc);
     c.globalAlpha = 1;
     draw(c);
+    if (this.rim) {
+      // an inked outline, then a thin rim of the planet's eerie light along the top edge
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,0.9)';
+      ctx.shadowBlur = 5 * sc;
+      ctx.drawImage(cv, 0, 0, cw, ch, bx, by, bw, bh);
+      ctx.shadowColor = withAlphaHex(this.rim, 0.5);
+      ctx.shadowBlur = 4 * sc;
+      ctx.shadowOffsetY = -1.5 * sc;
+      ctx.drawImage(cv, 0, 0, cw, ch, bx, by, bw, bh);
+      ctx.restore();
+    }
     ctx.drawImage(cv, 0, 0, cw, ch, bx, by, bw, bh);
+  }
+
+  /** Low mist rolling along the floor at the far end, in the planet's colour. */
+  private mist(ctx: CanvasRenderingContext2D, W: number, H: number, t: number, planet: string) {
+    const col = planet === 'mireth' ? '150,190,120' : planet === 'kessra' ? '170,220,235' : '180,170,150';
+    const k = Math.max(0, Math.min(1, (this.cam - 0.5) / 0.4));
+    if (k <= 0) return;
+    ctx.save();
+    for (let i = 0; i < 3; i++) {
+      const y = H * (0.5 + i * 0.07) + Math.sin(t * 0.3 + i * 2) * H * 0.01;
+      const g = ctx.createLinearGradient(0, y - H * 0.05, 0, y + H * 0.05);
+      g.addColorStop(0, `rgba(${col},0)`);
+      g.addColorStop(0.5, `rgba(${col},${0.1 * k})`);
+      g.addColorStop(1, `rgba(${col},0)`);
+      ctx.fillStyle = g;
+      const dx = Math.sin(t * 0.15 + i) * W * 0.1;
+      ctx.fillRect(-W * 0.2 + dx, y - H * 0.05, W * 1.4, H * 0.1);
+    }
+    ctx.restore();
   }
 
   /** A soft contact shadow on the floor, no platform. */

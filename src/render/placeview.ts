@@ -1,6 +1,8 @@
 import { INK } from './palette';
 import { noise } from './sketch';
 import { SNOW, SNOW_SHADE, snowAt, type Theme } from './theme';
+import { decalAt, hash, shade as shadeHex } from './texture';
+import { EERIE, flicker, type Light } from './light';
 import { isDark, inStorm, type RunState } from '../core/run';
 import { gateAt, idx, T_FLOOR, T_GATE, T_HAZARD, T_WALL, type World } from '../world/gen';
 
@@ -55,6 +57,10 @@ export class PlaceView {
   private shot = { off: 0, back: BACK };
   /** Sideways shift of the final view (px), so every fighter fits on screen. */
   pan = 0;
+  /** Lamps and glows found while drawing, in screen space, for the lighting pass. */
+  lights: Light[] = [];
+  private t = 0;
+  private planet = 'derelict';
 
   /**
    * Where the battle camera sits: straight behind the clone if the corridor allows,
@@ -196,6 +202,9 @@ export class PlaceView {
   draw(ctx: CanvasRenderingContext2D, r: RunState, at: FightAt, W: number, H: number, t: number, th: Theme, k: number) {
     const w = r.world;
     this.setCamera(at, W, H, k, w);
+    this.lights = [];
+    this.t = t;
+    this.planet = w.planet;
     const e = ease(clamp(k));
     const wallH = th.crystals ? 2.1 : 1.7;
 
@@ -299,13 +308,39 @@ export class PlaceView {
     const q = this.projPoly([[x, y, 0], [x + 1, y, 0], [x + 1, y + 1, 0], [x, y + 1, 0]]);
     if (!q) return;
     const d = this.far(x + 0.5, y + 0.5);
-    ctx.fillStyle = th.floor;
+    // deck plates vary a little in tone; solid ground doesn't, so no seams show
+    const tone = th.solidFloor ? th.floor : shadeHex(th.floor, (hash(x, y, 5) - 0.5) * 0.14);
+    ctx.fillStyle = tone;
     poly(ctx, q);
     ctx.fill();
-    // a solid floor strokes in its own colour, which also hides the seams between tiles
-    ctx.strokeStyle = th.solidFloor ? th.floor : th.floorLine;
+    ctx.strokeStyle = th.solidFloor ? tone : '#101113';
     ctx.lineWidth = 1;
     ctx.stroke();
+    if (!th.solidFloor) {
+      // rivets at the plate corners
+      ctx.fillStyle = 'rgba(216,207,184,0.16)';
+      for (const [u, v] of [[0.1, 0.1], [0.9, 0.1], [0.9, 0.9], [0.1, 0.9]]) {
+        const p = this.project(x + u, y + v, 0);
+        if (!p) continue;
+        const s = Math.max(1, Math.min(3, (this.F / p.d) * 0.012));
+        ctx.fillRect(p.x - s / 2, p.y - s / 2, s, s);
+      }
+    }
+    for (const dcl of decalAt(this.planet, x, y, t)) {
+      const pts = this.projPoly(dcl.pts.map(([u, v]) => [x + u, y + v, 0.002] as [number, number, number]));
+      if (!pts) continue;
+      if (!dcl.closed && pts.length < 2) continue;
+      ctx.beginPath();
+      pts.forEach((p, k2) => (k2 ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+      if (dcl.closed) ctx.closePath();
+      if (dcl.fill) { ctx.fillStyle = dcl.fill; ctx.fill(); }
+      if (dcl.stroke) {
+        const mid = pts[Math.floor(pts.length / 2)];
+        ctx.strokeStyle = dcl.stroke;
+        ctx.lineWidth = Math.max(0.6, (dcl.width ?? 1) * (this.F / Math.max(0.5, mid.d)) * 0.012);
+        ctx.stroke();
+      }
+    }
     if (hazard) {
       ctx.save();
       ctx.globalAlpha = 0.35 + 0.12 * Math.sin(t * 2 + x + y * 0.7);
@@ -315,6 +350,60 @@ export class PlaceView {
       ctx.restore();
     }
     this.fogOver(ctx, q, d, th);
+  }
+
+  /**
+   * Dressing on one wall face, all from the tile's hash: pipes, rust runs and lamps on the
+   * Derelict, glowing veins on Kessra, moss and glowing fungus on Mireth. Lamps also go into
+   * the light list.
+   */
+  private faceDetail(ctx: CanvasRenderingContext2D, x: number, y: number, x0: number, y0: number, x1: number, y1: number, h: number, side: number, alpha: number) {
+    const quad = (u0: number, u1: number, z0: number, z1: number) => this.projPoly([
+      [x0 + (x1 - x0) * u0, y0 + (y1 - y0) * u0, z0], [x0 + (x1 - x0) * u1, y0 + (y1 - y0) * u1, z0],
+      [x0 + (x1 - x0) * u1, y0 + (y1 - y0) * u1, z1], [x0 + (x1 - x0) * u0, y0 + (y1 - y0) * u0, z1],
+    ]);
+    const fill = (q: { x: number; y: number }[] | null, c: string) => { if (!q) return; ctx.fillStyle = c; poly(ctx, q); ctx.fill(); };
+    const hs = (n: number) => hash(x * 4 + side, y * 4 - side, n);
+    const e = EERIE[this.planet] ?? EERIE.derelict;
+    const lamp = (u: number, z: number, col: string, size: number, kind: 'bar' | 'dot') => {
+      const on = flicker(this.t, Math.floor(hs(9) * 1000));
+      const q = kind === 'bar' ? quad(u - size, u + size, z - size * 0.35, z + size * 0.35) : quad(u - size * 0.5, u + size * 0.5, z - size * 0.5, z + size * 0.5);
+      if (!q) return;
+      if (kind === 'bar') fill(quad(u - size * 1.2, u + size * 1.2, z - size * 0.5, z + size * 0.5), '#0b0c0e');
+      ctx.save();
+      ctx.globalAlpha *= 0.3 + 0.7 * on;
+      fill(q, col);
+      ctx.restore();
+      const c = this.project(x0 + (x1 - x0) * u, y0 + (y1 - y0) * u, z);
+      if (c && alpha > 0.5) this.lights.push({ x: c.x, y: c.y + (this.F / c.d) * 0.3, r: (this.F / c.d) * 2.2, color: col, power: 0.8 * on });
+    };
+    if (this.planet === 'derelict') {
+      // a conduit along the wall, and a highlight on its top edge
+      fill(quad(0, 1, h * 0.7, h * 0.78), '#1b1c1f');
+      fill(quad(0, 1, h * 0.775, h * 0.785), 'rgba(216,207,184,0.2)');
+      if (hs(1) < 0.3) fill(quad(0.3 + hs(2) * 0.4, 0.38 + hs(2) * 0.4, h * 0.15, h * 0.68), 'rgba(70,34,22,0.45)');
+      if (hs(3) < 0.18) fill(quad(0.25, 0.75, h * 0.2, h * 0.45), '#0d0e10');
+      if (hs(4) < 0.16) lamp(0.5, h * 0.88, hs(5) < 0.3 ? e.eerie : e.lamp, 0.16, 'bar');
+    } else if (this.planet === 'kessra') {
+      if (hs(1) < 0.45) {
+        // a glowing vein zigzagging down the rock
+        ctx.strokeStyle = 'rgba(159,230,240,0.3)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let i = 0; i <= 5; i++) {
+          const p = this.project(x0 + (x1 - x0) * (0.2 + hs(10 + i) * 0.6), y0 + (y1 - y0) * (0.2 + hs(10 + i) * 0.6), h * (1 - i / 5) * 0.9);
+          if (!p) continue;
+          if (i) ctx.lineTo(p.x, p.y); else ctx.moveTo(p.x, p.y);
+        }
+        ctx.stroke();
+      }
+      if (hs(4) < 0.14) lamp(0.3 + hs(6) * 0.4, h * (0.3 + hs(7) * 0.4), hs(5) < 0.35 ? e.eerie : e.lamp, 0.14, 'dot');
+    } else {
+      // moss creeping up from the ground, and glowing fungus shelves
+      fill(quad(0, 1, 0, h * (0.1 + hs(1) * 0.15)), 'rgba(70,95,45,0.7)');
+      if (hs(2) < 0.5) fill(quad(0.1 + hs(3) * 0.5, 0.3 + hs(3) * 0.5, h * 0.1, h * 0.35), 'rgba(70,95,45,0.55)');
+      if (hs(4) < 0.18) lamp(0.3 + hs(6) * 0.4, h * (0.25 + hs(7) * 0.35), hs(5) < 0.3 ? e.eerie : e.lamp, 0.08, 'dot');
+    }
   }
 
   /** A low snow drift: stacked rings, each smaller and brighter, so it reads as a mound. */
@@ -396,6 +485,7 @@ export class PlaceView {
         const s1 = this.project(x1, y1, h * 0.12);
         if (s0 && s1) { ctx.moveTo(s0.x, s0.y); ctx.lineTo(s1.x, s1.y); }
         ctx.stroke();
+        this.faceDetail(ctx, x, y, x0, y0, x1, y1, h, nx * 3 + ny, alpha);
       }
       if (full) {
         ctx.strokeStyle = edge;
