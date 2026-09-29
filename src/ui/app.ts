@@ -7,8 +7,8 @@ import { planetDepth, PLANETS } from '../core/planets';
 import { foeInfo, playerInfo } from './unitinfo';
 import { canRaise, loadMeta, markLanded, newMeta, raise, RUN_KEY, saveMeta, settleRun, type Meta } from '../core/meta';
 import {
-  actionsAt, bEnd, bFlee, bPick, bPlay, canExcise, chartOptions, goHome, here, land, describeAt, doAction, eatValue, excise, exciseCost, expCard, expUsable, isInteractable, isSelfCard, migrateRun,
-  lootChoose, lootDone, maxHp, mobAt, newRun, pathTo, playExp, renderValue, rewardPick, runTraits, step, stormIn,
+  actionsAt, bDiscard, bEnd, bFlee, bPick, bPlay, canExcise, chartOptions, goHome, here, land, describeAt, doAction, excise, exciseCost, expCard, expUsable, isInteractable, isSelfCard, migrateRun,
+  lootTake, maxHp, mobAt, newRun, pathTo, playExp, rewardPick, runTraits, step, stormIn,
   takeEvents, travel, travelPoints, type RunState,
 } from '../core/run';
 import {
@@ -622,6 +622,14 @@ export class App {
     this.refresh();
   }
 
+  private discardCard(uid: number) {
+    const r = this.run;
+    if (!r?.battle || this.busy() || r.battle.phase !== 'player') { this.refresh(); return; }
+    this.play(bDiscard(r, uid));
+    this.saveRun();
+    this.refresh();
+  }
+
   private tapBattle(px: number, py: number) {
     const r = this.run;
     if (!r?.battle) return;
@@ -806,6 +814,7 @@ export class App {
       hand.querySelectorAll<HTMLElement>('[data-c]').forEach((el) => {
         const uid = Number(el.dataset.c);
         press(el, () => this.tapCard(uid));
+        swipeDown(el, () => this.discardCard(uid));
       });
     }
     const en = this.root.querySelector('.energy');
@@ -814,7 +823,7 @@ export class App {
       en.innerHTML = `${Array.from({ length: max }, (_, i) => `<b class="${i < b.energy ? 'on' : ''}"></b>`).join('')}`;
     }
     const piles = this.root.querySelector('.piles');
-    if (piles) piles.textContent = `draw ${b.draw.length} · disc ${b.discard.length}`;
+    if (piles) piles.textContent = `draw ${b.draw.length} · disc ${b.discard.length} · swipe ↓ to discard`;
     const fleeB = this.root.querySelector<HTMLButtonElement>('[data-b="flee"]');
     if (fleeB) {
       fleeB.disabled = !quiet || !canFlee(b) || r.oxygen < 2;
@@ -858,13 +867,21 @@ export class App {
       html = `<div class="screen"><h1 class="title">STAR CHART<small>${esc(here(r).name)} cleared · ${r.codons} Codons so far</small></h1>
         <p class="sub">Each landing is one tier harder, whichever world you pick. The ship refuels: full oxygen, +30% integrity.</p>
         ${rows}<button class="btn" data-o="home">Go home now and bank everything</button></div>`;
-    } else if (quiet && r.mode === 'loot' && r.loot) {
-      const rows = r.loot.map((c, i) => `<div class="corpse"><span class="nm">${esc(ENEMIES[c.id].name)}${c.tagged ? ' ⌖' : ''}</span>
-        ${c.done ? `<span class="chip">${c.done === 'eat' ? 'eaten' : 'rendered'}</span>`
-          : `<button class="btn" data-eat="${i}">Eat +${eatValue(r, c)}</button><button class="btn" data-ren="${i}">Render +${renderValue(r, c)}◆</button>`}</div>`).join('');
-      html = `<div class="sheet-wrap"><div class="sheet frame"><h2>Corpses</h2>
-        <p>Eat to mend integrity (${Math.max(0, r.hp)}/${maxHp(r)}). Render for biomass (◆${r.biomass}).${r.reward?.codons ? ` +${r.reward.codons} Codons.` : ''}</p>
-        ${rows}<button class="btn" data-o="lootdone">Leave the rest</button></div></div>`;
+    } else if (quiet && r.mode === 'loot' && r.reward) {
+      // the after-fight summary: what the fight paid, and maybe a card
+      const rw = r.reward;
+      const rows = (rw.corpses ?? []).map((c) => `<div class="corpse"><span class="nm">${esc(ENEMIES[c.id].name)}${c.tagged ? ' <small>⌖ tagged ×2</small>' : ''}</span><span class="bio">+${c.bio} ◆</span></div>`).join('');
+      const cards = rw.options.length
+        ? `<h3>Spoils · take one</h3><div class="cards3">${rw.options.map((id, i) => `<div data-lootpick="${i}">${cardHtml(id, t)}</div>`).join('')}</div>
+           <button class="btn" data-lootpick="-1">Leave them</button>`
+        : '<button class="btn primary" data-lootpick="-1">Continue</button>';
+      html = `<div class="sheet-wrap"><div class="sheet frame summary"><div class="sum-title">${esc(rw.title)}</div>
+        <div class="sum-tiles">
+          <div class="tile cod"><b>+${rw.codons}</b><span>Codons</span><small>Growth: sequence your genome at the Printer or a vat. ${r.codons} this run.</small></div>
+          <div class="tile bio"><b>+${rw.biomass}</b><span>Biomass</span><small>Currency: splices, printed cards, mending at vats. ◆${r.biomass} held.</small></div>
+        </div>
+        ${rows ? `<h3>Rendered</h3>${rows}` : ''}
+        ${cards}</div></div>`;
     } else if (r.mode === 'reward' && r.reward) {
       const rw = r.reward;
       html = `<div class="sheet-wrap"><div class="sheet frame"><h2>${esc(rw.title)}</h2>
@@ -878,8 +895,11 @@ export class App {
       html = this.sheetHtml(this.sheet, r);
     }
     o.innerHTML = html;
-    o.querySelectorAll<HTMLElement>('[data-eat]').forEach((b) => b.addEventListener('click', () => { lootChoose(r, Number(b.dataset.eat), 'eat'); this.afterLoot(); }));
-    o.querySelectorAll<HTMLElement>('[data-ren]').forEach((b) => b.addEventListener('click', () => { lootChoose(r, Number(b.dataset.ren), 'render'); this.afterLoot(); }));
+    o.querySelectorAll<HTMLElement>('[data-lootpick]').forEach((b) => b.addEventListener('click', () => {
+      const i = Number(b.dataset.lootpick);
+      lootTake(r, i >= 0 ? i : undefined);
+      this.afterLoot();
+    }));
     o.querySelectorAll<HTMLElement>('[data-pick]').forEach((b) => b.addEventListener('click', () => {
       rewardPick(r, Number(b.dataset.pick));
       this.saveRun();
@@ -935,7 +955,6 @@ export class App {
       else if (k === 'hub') this.endRun('dead');
       else if (k === 'hub-won') this.endRun('won');
       else if (k === 'home') { goHome(r); this.saveRun(); this.refresh(); }
-      else if (k === 'lootdone') { lootDone(r); this.saveRun(); this.syncLayout(); }
       else if (k === 'print') {
         this.printOn = !this.printOn;
         try { this.store?.setItem('strain.print', this.printOn ? 'on' : 'off'); } catch { /* ignore */ }
@@ -1040,6 +1059,37 @@ export class App {
 let longPressed = false;
 
 /** Tap handler that ignores the release of a long press (long presses open card details, see App). */
+/** Drag a card down past a threshold to throw it away; it follows the finger until released. */
+function swipeDown(el: HTMLElement, done: () => void) {
+  let start: { x: number; y: number; id: number } | null = null;
+  const reset = () => { el.style.transform = ''; el.style.opacity = ''; el.style.transition = 'transform 0.15s, opacity 0.15s'; };
+  el.addEventListener('pointerdown', (e) => { start = { x: e.clientX, y: e.clientY, id: e.pointerId }; el.style.transition = 'none'; });
+  el.addEventListener('pointermove', (e) => {
+    if (!start || e.pointerId !== start.id) return;
+    const dy = e.clientY - start.y;
+    const dx = e.clientX - start.x;
+    if (dy > 8 && dy > Math.abs(dx)) {
+      el.setPointerCapture?.(e.pointerId);
+      el.style.transform = `translateY(${dy}px) rotate(${dx * 0.05}deg)`;
+      el.style.opacity = String(Math.max(0.25, 1 - dy / 160));
+    }
+  });
+  const end = (e: PointerEvent) => {
+    if (!start) return;
+    const dy = e.clientY - start.y;
+    const dx = e.clientX - start.x;
+    start = null;
+    if (dy > 60 && dy > Math.abs(dx) * 1.2) {
+      el.style.transition = 'transform 0.12s, opacity 0.12s';
+      el.style.transform = 'translateY(220px)';
+      el.style.opacity = '0';
+      window.setTimeout(done, 120);
+    } else reset();
+  };
+  el.addEventListener('pointerup', end);
+  el.addEventListener('pointercancel', () => { start = null; reset(); });
+}
+
 function press(el: HTMLElement, tap: () => void) {
   let start: { x: number; y: number } | null = null;
   el.addEventListener('pointerdown', (e) => { start = { x: e.clientX, y: e.clientY }; });

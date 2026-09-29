@@ -27,7 +27,7 @@ export interface ImplantDef {
 
 export const IMPLANTS: Record<string, ImplantDef> = {
   riblattice: { id: 'riblattice', name: 'Rib Lattice', glyph: '⌸', plateHde: true, text: 'Start every battle with plating equal to Hide.', flavor: 'A cage around the cage.' },
-  stomach: { id: 'stomach', name: 'Second Stomach', glyph: '◒', eatBio: 2, text: 'Eating a corpse also gives 2 biomass.', flavor: 'Nothing goes to waste.' },
+  stomach: { id: 'stomach', name: 'Second Stomach', glyph: '◒', eatBio: 2, text: 'Every corpse renders 2 extra biomass.', flavor: 'Nothing goes to waste.' },
   spinal: { id: 'spinal', name: 'Spinal Relay', glyph: '┇', firstCardFree: true, text: 'The first card each battle costs 0.', flavor: 'The body moves before you decide.' },
   weteye: { id: 'weteye', name: 'Wet Eye', glyph: '◉', wetEye: true, text: 'See ambushers within 2 tiles, whatever their stealth.', flavor: 'It never closes.' },
   tumor: { id: 'tumor', name: 'Tumor Engine', glyph: '⟁', traits: { abr: 1 }, maxHp: -4, text: '+1 Aberrance. −4 max integrity.', flavor: 'It grows. So do you.' },

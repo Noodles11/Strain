@@ -159,13 +159,13 @@ export const CARDS: Record<string, CardDef> = {
     flavor: 'Draw from what you have marked.',
   },
   unscarred: {
-    id: 'unscarred', name: 'Unscarred Edge', deck: 'tac', cost: 1, glyph: '⟋', keywords: ['hold'], dyn: 'unscarred',
+    id: 'unscarred', name: 'Unscarred Edge', deck: 'tac', cost: 1, glyph: '⟋', dyn: 'unscarred',
     fx: [{ op: 'dmg', v: v(1, { rfx: 1 }) }],
     rule: '+2 damage per round held without a hit. A hit wipes it.',
     flavor: 'Clean. For now.',
   },
   scartissue: {
-    id: 'scartissue', name: 'Scar Tissue', deck: 'tac', cost: 1, glyph: '≈', keywords: ['hold'], dyn: 'scartissue',
+    id: 'scartissue', name: 'Scar Tissue', deck: 'tac', cost: 1, glyph: '≈', dyn: 'scartissue',
     fx: [{ op: 'plate', v: v(0, { hde: 1 }) }],
     rule: 'While in hand: each time you lose integrity, +1 Might this fight.',
     flavor: 'Every wound, a lesson.',

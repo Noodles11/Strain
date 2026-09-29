@@ -129,7 +129,7 @@ b.foc { color: var(--foc); } b.met { color: var(--met); } b.abr { color: var(--a
 .textbox .more { float: right; animation: blink 0.8s steps(2) infinite; color: var(--sodium); }
 @keyframes blink { 50% { opacity: 0; } }
 .hand { display: flex; gap: 5px; }
-.hand > div { flex: 0 1 calc((100% - 4 * 5px) / 5); min-width: 0; display: flex; }
+.hand > div { flex: 0 1 calc((100% - 4 * 5px) / 5); min-width: 0; display: flex; touch-action: none; }
 .hand .card { flex: 1; min-width: 0; min-height: 150px; }
 .hand.busy .card { opacity: 0.55; pointer-events: none; }
 .controls { display: flex; gap: 8px; align-items: center; }
@@ -250,3 +250,18 @@ sup { font-size: 10px; }
 .plate .nm .form.faint { color: #9aa3a8; border: 1px solid #5b6368; }
 .plate .nm .form.hulk { color: #1a1206; background: #e3a33b; }
 .plate .nm .form.vet { color: #e38b6b; margin-left: 4px; }
+
+/* after-fight summary */
+.sheet.summary .sum-title { font-family: var(--mono); font-size: 26px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; text-align: center; color: var(--sodium); margin: 2px 0 10px; }
+.sum-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.sum-tiles .tile { border: 2px solid var(--bone); padding: 8px 10px; background: rgba(21,23,26,0.9); display: flex; flex-direction: column; gap: 2px; }
+.sum-tiles .tile b { font-family: var(--mono); font-size: 28px; line-height: 1; }
+.sum-tiles .tile span { font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; font-size: 12px; }
+.sum-tiles .tile small { color: var(--dim); font-size: 11px; line-height: 1.3; }
+.sum-tiles .tile.cod b, .sum-tiles .tile.cod span { color: var(--sodium); }
+.sum-tiles .tile.bio b, .sum-tiles .tile.bio span { color: #9fd08a; }
+.sheet.summary h3 { margin: 12px 0 4px; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); }
+.sheet.summary .corpse { display: flex; justify-content: space-between; padding: 3px 0; border-top: 1px solid rgba(216,207,184,0.12); }
+.sheet.summary .corpse .bio { font-family: var(--mono); color: #9fd08a; }
+.sheet.summary .corpse small { color: var(--dim); font-weight: 400; text-transform: none; }
+.sheet.summary .cards3 { margin-bottom: 8px; }

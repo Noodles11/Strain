@@ -628,25 +628,38 @@ function startPlayerTurn(s: BattleState, rng: Rng, ev: BattleEv[], drawPenalty =
     else if (before > 0) ev.push({ k: 'text', s: `${CARDS[c.id].name.toUpperCase()} is scarred. Its bonus is gone.` });
   }
   s.lostHp = false;
-  drawCards(s, Math.max(0, handSize(effTraits(s)) - drawPenalty + (s.turn === 1 ? s.mods.drawFirst : 0)), rng);
+  // top the hand back up to hand size
+  const target = handSize(effTraits(s)) - drawPenalty + (s.turn === 1 ? s.mods.drawFirst : 0);
+  drawCards(s, Math.max(0, target - s.hand.length), rng);
 }
 
 export function endTurn(s: BattleState, rng: Rng): BattleEv[] {
   const ev: BattleEv[] = [];
   if (s.phase !== 'player' || s.pending) return ev;
-  const keep: CardInst[] = [];
-  for (const c of s.hand) {
-    if (hasKeyword(CARDS[c.id], 'hold')) keep.push(c);
-    else if (c.fleeting) continue;
-    else s.discard.push(c);
-  }
-  s.hand = keep;
+  // cards you didn't play stay in hand; only fleeting ones (Clot Patches) fade
+  s.hand = s.hand.filter((c) => !c.fleeting);
   if (s.player.weak > 0) s.player.weak -= 1;
   for (const f of aliveFoes(s)) if (f.expose > 0) f.expose -= 1;
   s.noFlee = s.foes.some((f) => ENEMIES[f.id].rank);
   enemyTurn(s, rng, ev);
   checkEnd(s, ev);
   if (s.phase === 'player') startPlayerTurn(s, rng, ev);
+  return ev;
+}
+
+/** Throw cards from your hand onto the discard pile, free, to make room for new draws. */
+export function discardCards(s: BattleState, uids: number[]): BattleEv[] {
+  const ev: BattleEv[] = [];
+  if (s.phase !== 'player' || s.pending) return ev;
+  const names: string[] = [];
+  for (const uid of uids) {
+    const i = s.hand.findIndex((c) => c.uid === uid);
+    if (i < 0) continue;
+    const [c] = s.hand.splice(i, 1);
+    if (!c.fleeting) s.discard.push(c);
+    names.push(CARDS[c.id].name.toUpperCase());
+  }
+  if (names.length) ev.push({ k: 'text', s: `You discard ${names.join(', ')}.` });
   return ev;
 }
 
@@ -835,8 +848,7 @@ export function flee(s: BattleState, rng: Rng): BattleEv[] {
     return ev;
   }
   ev.push({ k: 'text', s: 'Can’t escape!' });
-  for (const c of s.hand) if (!hasKeyword(CARDS[c.id], 'hold') && !c.fleeting) s.discard.push(c);
-  s.hand = s.hand.filter((c) => hasKeyword(CARDS[c.id], 'hold'));
+  s.hand = s.hand.filter((c) => !c.fleeting);
   enemyTurn(s, rng, ev);
   checkEnd(s, ev);
   if (s.phase === 'player') startPlayerTurn(s, rng, ev);
@@ -867,7 +879,11 @@ export function botTurn(s: BattleState, rng: Rng): void {
     if (value(s, best, needGuard, lowHp) <= 0) break;
     playCard(s, best.uid, weakest(s)?.uid, rng);
   }
-  if (s.phase === 'player' && !s.pending) endTurn(s, rng);
+  if (s.phase === 'player' && !s.pending) {
+    // clear out cards it saw no use for, so the next draw brings fresh ones
+    discardCards(s, s.hand.filter((c) => CARDS[c.id].dyn !== 'unscarred').map((c) => c.uid));
+    endTurn(s, rng);
+  }
 }
 
 function weakest(s: BattleState): Foe | undefined {
@@ -905,6 +921,6 @@ function value(s: BattleState, c: CardInst, guard: boolean, low: boolean): numbe
       default: v += 1;
     }
   }
-  if (def.keywords?.includes('hold') && def.dyn === 'unscarred' && !guard) v *= 0.8;
+  if (def.dyn === 'unscarred' && !guard) v *= 0.8;
   return v / Math.max(0.6, r.cost);
 }

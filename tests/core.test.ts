@@ -4,7 +4,7 @@ import { botTurn, startBattle } from '../src/core/battle';
 import { Rng } from '../src/core/rng';
 import { traits } from '../src/core/traits';
 import { newMeta } from '../src/core/meta';
-import { actionsAt, bAuto, chartOptions, doAction, land, lootChoose, maxHp, newRun, rewardPick, step, type RunState } from '../src/core/run';
+import { actionsAt, bAuto, chartOptions, doAction, land, lootTake, maxHp, mendRate, newRun, rewardPick, step, type RunState } from '../src/core/run';
 import { gateAt, idx, inBounds, passable, T_GATE, tileAt } from '../src/world/gen';
 
 describe('trait formulas', () => {
@@ -59,7 +59,13 @@ export function botRun(seed: number, level: number, landings = 1): { r: RunState
     if (r.mode === 'dead' || r.mode === 'won') break;
     if (r.mode === 'battle') { bAuto(r); continue; }
     if (r.mode === 'loot') {
-      r.loot!.forEach((_, i) => lootChoose(r, i, r.hp < maxHp(r) * 0.7 ? 'eat' : 'render'));
+      lootTake(r, r.reward?.options.length ? 0 : undefined);
+      // biomass heals at vats now; the bot stands in for a player who detours to one when hurt
+      if (r.hp < maxHp(r) * 0.7 && r.biomass > 0) {
+        const n = Math.min(maxHp(r) - r.hp, r.biomass * mendRate(r));
+        r.biomass -= Math.ceil(n / mendRate(r));
+        r.hp += n;
+      }
       continue;
     }
     if (r.mode === 'reward') { rewardPick(r, 0); continue; }

@@ -55,6 +55,20 @@ Bot sim, two landings (rushes each boss, 20 seeds):
 | all 7 | 18 | 2 | 0 |
 | all 9 | 20 | 0 | 0 |
 
+## Hand, discard and loot (rules change)
+
+- **Hands carry over:** cards you don't play stay in hand. At the start of each turn the hand is topped back up to hand
+  size (5 at base; Reflex raises it). Fleeting cards (Clot Patches) still fade at the end of the turn. The old Hold keyword is gone,
+  since every card holds now (Unscarred Edge still grows while it sits in hand).
+- **Discard:** swipe a card down in battle to throw it on the discard pile, free, any number of times before ending the turn.
+- **No more eating corpses:** every corpse is rendered into biomass automatically (tagged ones double). Healing moved to
+  **empty vats**: *Mend 10* or *Mend fully* for biomass, at 2 integrity per biomass +1 per 3 Metabolism.
+  Second Stomach now adds +2 biomass per corpse.
+- **After-fight summary:** a popup with the Codons gained (growth: sequence at the Printer or a vat), the biomass gained
+  (currency: splices, printed cards, mending), each corpse and what it rendered into, and, when the fight offers one, a pick of
+  three cards (or leave them).
+- The balance bot mends at a vat whenever it drops below 70% after a fight, standing in for a player who detours to one.
+
 ## Battle scene
 
 - Clone and enemies stand on one floor in perspective: enemies further back (higher, smaller), the clone close up.

@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { botTurn, endTurn, intentNumbers, playCard, startBattle, type CardInst } from '../src/core/battle';
+import { botTurn, discardCards, endTurn, intentNumbers, playCard, startBattle, type CardInst } from '../src/core/battle';
 import { CARDS } from '../src/core/cards';
 import { ENEMIES } from '../src/core/enemies';
 import { newMeta } from '../src/core/meta';
 import { PLANETS, planetDepth } from '../src/core/planets';
 import { Rng } from '../src/core/rng';
-import { chartOptions, land, newRun } from '../src/core/run';
+import { actionsAt, bAuto, chartOptions, doAction, land, lootTake, maxHp, newRun, step } from '../src/core/run';
 import { traits } from '../src/core/traits';
 import { generateWorld, reachable } from '../src/world/gen';
 
@@ -149,5 +149,63 @@ describe('growing cards say so in the log', () => {
     const { s } = setup(['puffcap'], deckOf('unscarred', 'brace', 'brace', 'brace', 'brace'));
     const ev = endTurn(s, new Rng(1));
     expect(texts(ev).some((t) => t.startsWith('UNSCARRED EDGE stays clean: +2'))).toBe(true);
+  });
+});
+
+describe('hand, discard and after-fight loot', () => {
+  it('unplayed cards stay in hand and the hand tops up to its size', () => {
+    const deck = deckOf('scalpel', 'scalpel', 'scalpel', 'brace', 'brace', 'brace', 'flense', 'flense', 'harpoon', 'harpoon');
+    const { s } = setup(['knot'], deck);
+    const before = s.hand.map((c) => c.uid);
+    expect(before.length).toBe(5);
+    playCard(s, s.hand[0].uid, undefined, new Rng(1));
+    const kept = s.hand.map((c) => c.uid);
+    endTurn(s, new Rng(2));
+    expect(s.hand.length).toBe(5);
+    for (const u of kept) expect(s.hand.some((c) => c.uid === u)).toBe(true);
+  });
+
+  it('discarding frees room for new draws next turn', () => {
+    const deck = deckOf('scalpel', 'scalpel', 'scalpel', 'brace', 'brace', 'brace', 'flense', 'flense', 'harpoon', 'harpoon');
+    const { s } = setup(['knot'], deck);
+    const out = s.hand.slice(0, 3).map((c) => c.uid);
+    const ev = discardCards(s, out);
+    expect(ev.some((e) => e.k === 'text')).toBe(true);
+    expect(s.hand.length).toBe(2);
+    expect(s.discard.length).toBe(3);
+    endTurn(s, new Rng(2));
+    expect(s.hand.length).toBe(5);
+  });
+
+  it('a won fight renders every corpse into biomass and waits on the summary', () => {
+    const r = newRun(newMeta(), 8);
+    const m = r.world.mobs.find((q) => q.kind === 'pack' && q.alive)!;
+    m.foes = ['tick'];
+    r.x = m.x; r.y = m.y + 1;
+    const bio0 = r.biomass;
+    for (let g = 0; g < 60 && r.mode !== 'loot'; g++) {
+      if (r.mode === 'explore') step(r, m.x - r.x, m.y - r.y);
+      else if (r.mode === 'battle') bAuto(r);
+      else break;
+    }
+    expect(r.mode).toBe('loot');
+    expect(r.reward!.corpses!.length).toBe(1);
+    expect(r.biomass).toBe(bio0 + r.reward!.biomass);
+    lootTake(r);
+    expect(r.mode).toBe('explore');
+    expect(r.battle).toBeUndefined();
+  });
+
+  it('vats mend integrity for biomass', () => {
+    const r = newRun(newMeta(), 3);
+    const vat = r.world.pois.find((p) => p.kind === 'vat')!;
+    r.x = vat.x; r.y = vat.y;
+    r.hp = 10;
+    r.biomass = 50;
+    const acts = actionsAt(r, vat.x, vat.y);
+    expect(acts.some((a) => a.id === 'mend:full' && a.ok)).toBe(true);
+    doAction(r, vat.x, vat.y, 'mend:full');
+    expect(r.hp).toBe(maxHp(r));
+    expect(r.biomass).toBeLessThan(50);
   });
 });

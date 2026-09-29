@@ -1,7 +1,7 @@
 import {
   CARDS, hasKeyword, primaryTrait, resolveCard, REWARD_EXP, REWARD_TAC, STARTER_EXP, STARTER_TAC, type DeckKind,
 } from './cards';
-import {
+import { discardCards,
   botTurn, endTurn, flee, pickHand, playCard, startBattle, type BattleEv, type BattleState, type CardInst,
 } from './battle';
 import { ENEMIES, tierOf } from './enemies';
@@ -11,7 +11,7 @@ import { IMPLANT_POOL, IMPLANTS, implantMods, type ImplantMods } from './implant
 import type { Meta } from './meta';
 import { Rng } from './rng';
 import {
-  addTraits, biomassYield, eatHeal, exploreHandSize, hazardDamage, maxIntegrity, maxOxygen, SEQUENCE_CAP, sequenceCost, SOMATIC_CAP, somaticCost, TRAIT_INFO, TRAITS, traits,
+  addTraits, biomassYield, exploreHandSize, hazardDamage, maxIntegrity, maxOxygen, SEQUENCE_CAP, sequenceCost, SOMATIC_CAP, somaticCost, TRAIT_INFO, TRAITS, traits,
   type Trait, type Traits,
 } from './traits';
 import {
@@ -42,6 +42,8 @@ export interface Reward {
   deck: DeckKind;
   biomass: number;
   codons: number;
+  /** After a fight: each corpse and the biomass it rendered into. */
+  corpses?: { id: string; bio: number; tagged: boolean }[];
 }
 
 export interface FightCtx {
@@ -692,6 +694,12 @@ export function bEnd(r: RunState): BattleEv[] {
   return ev;
 }
 
+/** Throw a card from hand onto the discard pile (free), to make room at the next top-up. */
+export function bDiscard(r: RunState, uid: number): BattleEv[] {
+  if (!r.battle) return [];
+  return discardCards(r.battle, [uid]);
+}
+
 export function bFlee(r: RunState): BattleEv[] {
   if (!r.battle || r.oxygen < 2) return [];
   r.oxygen -= 2;
@@ -767,48 +775,39 @@ function afterBattleOp(r: RunState) {
     } else if (ctx.reward) {
       codons = kills * KILL_CODONS + bonus;
       options = offerCards(r, 'tac');
-      title = 'Something useful';
+      title = 'Victory';
     }
   }
+  // every corpse is rendered straight into biomass; healing happens at vats now, not by eating
+  const corpses = (r.loot ?? []).map((c) => ({ id: c.id, tagged: c.tagged, bio: renderValue(r, c) + mods(r).renderBio + mods(r).eatBio }));
+  r.loot = undefined;
+  const rendered = corpses.reduce((a, c) => a + c.bio, 0);
   r.codons += codons;
-  r.biomass += biomass;
-  r.reward = options.length || codons || biomass ? { title, options, deck: 'tac', biomass, codons } : undefined;
-  if (kills === 0 && ctx.kind !== 'boss') {
-    // nothing to eat or render: it all got away
-    say(r, 'Nothing left to take.');
-    r.loot = [];
-    r.mode = 'loot';
-    lootDone(r);
-    return;
-  }
+  r.biomass += biomass + rendered;
+  if (!title) title = kills ? 'Victory' : 'They got away';
+  r.reward = { title, options, deck: 'tac', biomass: biomass + rendered, codons, corpses };
+  // the summary shows over the map; picking a card (or leaving them) closes it
   r.mode = 'loot';
 }
 
-export function eatValue(r: RunState, c: Corpse): number {
-  const base = eatHeal(ENEMIES[c.id].biomass, runTraits(r));
-  return c.tagged ? base * 2 : base;
+/** Close the after-fight summary, taking card `pick` if one was offered. */
+export function lootTake(r: RunState, pick?: number) {
+  if (r.mode !== 'loot') return;
+  const rw = r.reward;
+  const id = pick !== undefined ? rw?.options[pick] : undefined;
+  if (id) {
+    r.tac.push({ uid: r.nextUid++, id });
+    say(r, `${CARDS[id].name} joins your tactical deck.`);
+  }
+  r.reward = undefined;
+  r.loot = undefined;
+  r.battle = undefined;
+  r.mode = 'explore';
 }
 
 export function renderValue(r: RunState, c: Corpse): number {
   const base = biomassYield(ENEMIES[c.id].biomass, runTraits(r)) * (c.tagged ? 2 : 1);
   return Math.max(1, Math.round(base * c.mult));
-}
-
-export function lootChoose(r: RunState, i: number, how: 'eat' | 'render') {
-  const c = r.loot?.[i];
-  if (!c || c.done || r.mode !== 'loot') return;
-  c.done = how;
-  if (how === 'eat') { r.hp = Math.min(maxHp(r), r.hp + eatValue(r, c)); r.biomass += mods(r).eatBio; }
-  else r.biomass += renderValue(r, c) + mods(r).renderBio;
-  if (r.loot!.every((x) => x.done)) lootDone(r);
-}
-
-export function lootDone(r: RunState) {
-  if (r.mode !== 'loot') return;
-  r.loot = undefined;
-  r.battle = undefined;
-  r.mode = r.reward && r.reward.options.length ? 'reward' : 'explore';
-  if (r.mode === 'explore') r.reward = undefined;
 }
 
 export function rewardPick(r: RunState, i: number) {
@@ -951,6 +950,14 @@ export function actionsAt(r: RunState, x: number, y: number): Action[] {
     });
   }
   if (p.kind === 'vat') {
+    // the vat's fluid still mends: biomass in, integrity out
+    const missing = maxHp(r) - r.hp;
+    const rate = mendRate(r);
+    if (missing > 0) {
+      const small = Math.min(10, missing);
+      out.push({ id: 'mend:10', label: `Mend ${small}`, detail: `${Math.ceil(small / rate)} biomass`, ok: near && r.biomass >= Math.ceil(small / rate) });
+      if (missing > 10) out.push({ id: 'mend:full', label: `Mend fully (${missing})`, detail: `${Math.ceil(missing / rate)} biomass`, ok: near && r.biomass >= Math.ceil(missing / rate) });
+    }
     for (const k of TRAITS) {
       const lv = r.seq[k];
       const cost = sequenceCost(lv);
@@ -986,6 +993,15 @@ export function doAction(r: RunState, x: number, y: number, id: string): boolean
     else if (p?.kind === 'cache') openCache(r, p, resolveCard(CARDS[expCard(r, uid)?.id ?? 'pry'], runTraits(r)).power > 0);
     else if (p?.kind === 'nest') { p.used = true; r.codons += 2; say(r, 'The nest burns. +2 Codons.'); }
     reveal(r);
+    return true;
+  }
+  if (p && id.startsWith('mend:')) {
+    const missing = maxHp(r) - r.hp;
+    const n = id === 'mend:full' ? missing : Math.min(10, missing);
+    const cost = Math.ceil(n / mendRate(r));
+    r.biomass -= cost;
+    r.hp += n;
+    say(r, `You sink into the vat fluid. +${n} integrity, −${cost} biomass.`);
     return true;
   }
   if (p && id.startsWith('seq:')) { vatSequence(r, id.slice(4) as Trait); return true; }
@@ -1025,6 +1041,11 @@ function openCache(r: RunState, p: Poi, extra: boolean) {
 }
 
 // ---- Upgrade sites ----
+
+/** Integrity mended per point of biomass at a vat: 2, plus 1 per 3 Metabolism. */
+export function mendRate(r: RunState): number {
+  return 2 + Math.floor(runTraits(r).met / 3);
+}
 
 /** Empty vat: a permanent sequence level, paid from Codons carried first, then the bank. */
 function vatSequence(r: RunState, k: Trait) {
