@@ -3,7 +3,7 @@ import { drawCloneTop } from './clone';
 import { INK } from './palette';
 import { noise } from './sketch';
 import { SNOW, SNOW_SHADE, snowAt, theme } from './theme';
-import { inStorm, inView, isDark, type RunState } from '../core/run';
+import { inStorm, inView, type RunState } from '../core/run';
 import { gateAt, idx, T_FLOOR, T_GATE, T_HAZARD, T_WALL, type Mob, type Poi } from '../world/gen';
 
 
@@ -212,8 +212,8 @@ export class WorldView {
       }
     }
 
-    // fog of war: a hatch over the tiles, never a blackout.
-    // One layer of lines for remembered or dark ground, a crossing second layer for ground never seen.
+    // fog of war: a crossed hatch over ground never seen, never a blackout.
+    // Once a tile has been revealed it stays clear for good.
     const thin: [number, number, number][] = [];
     const thick: [number, number, number][] = [];
     for (let y = y0; y <= y1; y++) {
@@ -224,8 +224,7 @@ export class WorldView {
         const box: [number, number, number] = [this.sx(x), this.sy(y) - (wall ? lift : 0), T + (wall ? lift : 0)];
         // the clone always sees clearly within 2 tiles, dark room or not
         const near = Math.hypot(x - r.x, y - r.y) <= CLEAR_RADIUS + 0.5;
-        if (near) { /* no fog */ } else if (!w.seen[i]) { thin.push(box); thick.push(box); }
-        else if (!inView(r, x, y) || isDark(r, x, y)) thin.push(box);
+        if (!near && !w.seen[i]) { thin.push(box); thick.push(box); }
         if (inStorm(r, x, y)) {
           ctx.fillStyle = 'rgba(122,74,179,0.28)';
           ctx.fillRect(box[0], box[1], T + 0.5, box[2] + 0.5);
