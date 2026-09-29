@@ -126,3 +126,28 @@ describe('Rot', () => {
     expect(wins).toBeGreaterThan(0);
   });
 });
+
+describe('growing cards say so in the log', () => {
+  const texts = (ev: { k: string; s?: string }[]) => ev.filter((e) => e.k === 'text').map((e) => e.s!);
+
+  it('Feeding Blade announces each kill', () => {
+    const { s } = setup(['puffcap', 'puffcap'], deckOf('hunger', 'feeding', 'brace', 'brace', 'brace'));
+    s.foes[0].hp = 1;
+    const ev = playCard(s, s.hand.find((c) => c.id === 'hunger')!.uid, s.foes[0].uid, new Rng(1));
+    expect(texts(ev).some((t) => t.startsWith('FEEDING BLADE feeds: +5 damage (now +5)'))).toBe(true);
+  });
+
+  it('Callus announces each stopped hit', () => {
+    const { s } = setup(['croaker'], deckOf('callus', 'brace', 'brace', 'brace', 'brace'));
+    s.foes[0].intentIdx = 1; // Tongue
+    s.player.plate = 50;
+    const ev = endTurn(s, new Rng(1));
+    expect(texts(ev).some((t) => t.startsWith('CALLUS hardens'))).toBe(true);
+  });
+
+  it('Unscarred Edge announces its growth and its loss', () => {
+    const { s } = setup(['puffcap'], deckOf('unscarred', 'brace', 'brace', 'brace', 'brace'));
+    const ev = endTurn(s, new Rng(1));
+    expect(texts(ev).some((t) => t.startsWith('UNSCARRED EDGE stays clean: +2'))).toBe(true);
+  });
+});

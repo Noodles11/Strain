@@ -1,4 +1,4 @@
-import { CARDS, hasKeyword, resolveCard, type CardDef, type Effect, type ResolvedCard } from './cards';
+import { CARDS, hasKeyword, resolveCard, type CardDef, type Dyn, type Effect, type ResolvedCard } from './cards';
 import { ENEMIES, rollForm, veteran, type EnemyDef, type FoeForm, type Intent } from './enemies';
 import type { Rng } from './rng';
 import { addTraits, energyPerTurn, handSize, TRAITS, traits, type Trait, type Traits } from './traits';
@@ -348,7 +348,7 @@ export function pickHand(s: BattleState, uid: number, targetUid: number | undefi
     ev.push({ k: 'text', s: `${CARDS[target.id].name.toUpperCase()} swells with your best.` });
   } else {
     s.hand.splice(s.hand.indexOf(target), 1);
-    consume(s, target);
+    consume(s, target, ev);
     const gain = CARDS[target.id].cost;
     s.energy += gain;
     ev.push({ k: 'text', s: `You eat ${CARDS[target.id].name.toUpperCase()}. +${gain} energy.` });
@@ -358,16 +358,31 @@ export function pickHand(s: BattleState, uid: number, targetUid: number | undefi
   return ev;
 }
 
-function consume(s: BattleState, c: CardInst) {
+function consume(s: BattleState, c: CardInst, ev: BattleEv[]) {
   if (c.fleeting) return;
   s.consumed.push(c.uid);
   s.consumedRun += 1;
+  grew(s, ev, 'grief', (n) => `${n} grows on the loss: +1 plating (now +${s.consumedRun}).`);
+}
+
+/**
+ * Cards that grow during a fight say so in the log when they do, as long as one of them
+ * is somewhere in your deck this fight (hand, draw or discard).
+ */
+function grew(s: BattleState, ev: BattleEv[], dyn: Dyn, text: (name: string) => string, only?: CardInst[]) {
+  const pool = only ?? [...s.hand, ...s.draw, ...s.discard];
+  const c = pool.find((q) => CARDS[q.id].dyn === dyn);
+  if (c) ev.push({ k: 'text', s: text(CARDS[c.id].name.toUpperCase()) });
 }
 
 function finishCard(s: BattleState, card: CardInst, ev: BattleEv[]) {
   const def = CARDS[card.id];
-  if (def.dyn === 'sibling') s.siblings += 1;
-  if (hasKeyword(def, 'consume') || card.fleeting) consume(s, card);
+  if (def.dyn === 'sibling') {
+    s.siblings += 1;
+    // the card just played isn't in any pile yet, so check the others for more copies
+    grew(s, ev, 'sibling', (n) => `Every other ${n} gets +2 (now +${2 * s.siblings}).`);
+  }
+  if (hasKeyword(def, 'consume') || card.fleeting) consume(s, card, ev);
   else s.discard.push(card);
   checkEnd(s, ev);
 }
@@ -519,6 +534,7 @@ function killFoe(s: BattleState, f: Foe, ev: BattleEv[]) {
   f.hp = 0;
   f.alive = false;
   s.kills += 1;
+  grew(s, ev, 'feeding', (n) => `${n} feeds: +${effTraits(s).abr} damage (now +${s.kills * effTraits(s).abr}).`);
   ev.push({ k: 'die', uid: f.uid }, { k: 'text', s: `${NAME(f)} collapses!` });
   const burst = ENEMIES[f.id].deathRot;
   if (burst) {
@@ -605,7 +621,11 @@ function startPlayerTurn(s: BattleState, rng: Rng, ev: BattleEv[], drawPenalty =
   s.player.keep = 0;
   s.energy = energyPerTurn(effTraits(s)) + (s.turn === 1 ? s.mods.energyFirst : 0);
   for (const c of s.hand) {
-    if (CARDS[c.id].dyn === 'unscarred') c.bonus = s.lostHp ? 0 : (c.bonus ?? 0) + 2;
+    if (CARDS[c.id].dyn !== 'unscarred') continue;
+    const before = c.bonus ?? 0;
+    c.bonus = s.lostHp ? 0 : before + 2;
+    if (c.bonus > before) ev.push({ k: 'text', s: `${CARDS[c.id].name.toUpperCase()} stays clean: +2 damage (now +${c.bonus}).` });
+    else if (before > 0) ev.push({ k: 'text', s: `${CARDS[c.id].name.toUpperCase()} is scarred. Its bonus is gone.` });
   }
   s.lostHp = false;
   drawCards(s, Math.max(0, handSize(effTraits(s)) - drawPenalty + (s.turn === 1 ? s.mods.drawFirst : 0)), rng);
@@ -748,9 +768,16 @@ function enemyTurn(s: BattleState, rng: Rng, ev: BattleEv[]) {
           lostNow = hpLost(s.player.hp, d);
           s.player.hp -= d;
           s.lostHp = true;
-          for (const c of s.hand) if (CARDS[c.id].dyn === 'scartissue') s.surge.mgt += 1;
         }
         ev.push({ k: 'hitPlayer', n: lostNow }, { k: 'text', s: d > 0 ? `You take ${d}.${n.pierce && s.player.plate > 0 ? ' Straight through your plating.' : ''}` : 'Your plating holds.' });
+        if (raw > 0 && d === 0) grew(s, ev, 'callus', (nm) => `${nm} hardens: +1 plating (now +${s.stopped}).`);
+        if (d > 0) {
+          for (const c of s.hand) {
+            if (CARDS[c.id].dyn !== 'scartissue') continue;
+            s.surge.mgt += 1;
+            ev.push({ k: 'text', s: `${CARDS[c.id].name.toUpperCase()} learns from it: Might +1 this fight.` });
+          }
+        }
         if (n.drain && lostNow > 0 && f.hp < f.maxHp) {
           const got = Math.min(lostNow, f.maxHp - f.hp);
           f.hp += got;
