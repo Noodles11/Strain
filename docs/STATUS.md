@@ -156,6 +156,12 @@ Everything below is generated from tile hashes (`src/render/texture.ts`, `src/re
 - **Battle:** a spot on the enemies, the clone's glow, the wall lamps, and a flickering eerie light far down the corridor
   (emergency red, cave violet, swamp green); sprites get an ink halo and a thin rim of that eerie colour; mist rolls along the floor.
 - Motes drift through the light on the map.
+- **The clone** is a bare, hairless printed humanoid in pale vat skin, inked in near-black (`src/render/clone.ts`).
+  On the map it is a small 3D-posed figure with a walk cycle (legs stride, arms swing against them, the body bobs), turned to
+  face its way: front (blank face, dark eyes), side (profile) or back (spine and skull socket). In battle it is seen over the
+  shoulder, backlit: bald head with the cable socket and the print code on the nape, shoulder blades, spine, the vat seam,
+  rim light on the edges. Might widens the shoulders, Hide pushes bony plates through the spine and shoulders, Aberrance grows
+  violet limbs; the right arm swings out when it strikes.
 - **Mob depth in battle:** each creature casts a solid shadow laid across the floor toward the camera, has a darker contact
   shadow at its feet, and gets hard cel shading (a lit top band, a sharp step into shadow on its lower half, the far side
   falling off). Back-row creatures sink into a haze of the corridor dark. Glows that used to spill as a bright patch under
