@@ -118,7 +118,9 @@ function eye(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, col
   glow.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = glow;
   ctx.globalAlpha *= 0.55;
-  ctx.fillRect(x - r * 3, y - r * 3, r * 6, r * 6);
+  ctx.beginPath();
+  ctx.arc(x, y, r * 3, 0, Math.PI * 2);
+  ctx.fill();
   ctx.globalAlpha /= 0.55;
   ctx.fillStyle = color;
   ctx.beginPath();
@@ -219,10 +221,12 @@ function drawHusk(ctx: CanvasRenderingContext2D, u: number, fx: CreatureFx, s: n
   const w = u * 0.012;
   // thruster glow
   const g = ctx.createRadialGradient(0, -u * 0.12 + hover, 0, 0, -u * 0.12 + hover, u * 0.35);
-  g.addColorStop(0, 'rgba(111,163,160,0.55)');
+  g.addColorStop(0, 'rgba(111,163,160,0.3)');
   g.addColorStop(1, 'rgba(111,163,160,0)');
   ctx.fillStyle = g;
-  ctx.fillRect(-u * 0.4, -u * 0.5 + hover, u * 0.8, u * 0.6);
+  ctx.beginPath();
+  ctx.ellipse(0, -u * 0.12 + hover, u * 0.3, u * 0.2, 0, 0, Math.PI * 2);
+  ctx.fill();
   // body box
   const body: Pt[] = [
     [-u * 0.3, top + u * 0.1], [u * 0.28, top + u * 0.06], [u * 0.32, top + u * 0.72],
@@ -331,10 +335,12 @@ function drawDrone(ctx: CanvasRenderingContext2D, u: number, fx: CreatureFx, s: 
   const spin = fx.t * 2.2;
   // thruster haze beneath it
   const g = ctx.createRadialGradient(0, hover + U * 0.5, 0, 0, hover + U * 0.5, U * 0.55);
-  g.addColorStop(0, 'rgba(111,163,160,0.4)');
+  g.addColorStop(0, 'rgba(111,163,160,0.25)');
   g.addColorStop(1, 'rgba(111,163,160,0)');
   ctx.fillStyle = g;
-  ctx.fillRect(-U * 0.7, hover + U * 0.1, U * 1.4, U * 0.7);
+  ctx.beginPath();
+  ctx.ellipse(0, hover + U * 0.5, U * 0.5, U * 0.3, 0, 0, Math.PI * 2);
+  ctx.fill();
   // thin radiating sensor fins, slowly rotating
   ctx.lineWidth = Math.max(1, u * 0.008);
   for (let i = 0; i < 6; i++) {

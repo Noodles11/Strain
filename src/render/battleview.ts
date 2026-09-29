@@ -166,13 +166,13 @@ export class BattleView {
         const lx = x - a.lunge * W * 0.06;
         const ly = y + a.lunge * H * 0.03;
         this.sprite(ctx, lx - u * 2, ly - u * 2.3, u * 4, u * 2.6, (c) => drawCreature(c, f.id, lx, ly, u, {
-          t: t + f.uid, boil: Math.floor(t * 8) * 3, flash: a.flash, lunge: a.lunge, dead: a.dead, seed: (f.uid % 97) / 97, dim: sc < 0.9 ? 0.25 : 0,
+          t: t + f.uid, boil: Math.floor(t * 8) * 3, flash: a.flash, lunge: a.lunge, dead: a.dead, seed: (f.uid % 97) / 97, dim: 0,
           state: f.asleep ? 1 : f.heat !== undefined ? f.heat / 4 : 0,
-        }));
+        }), place ? { foot: [lx, ly], height: h0, haze: sc < 0.9 ? Math.min(0.45, (1 - sc) * 0.9) : 0, hazeColor: th.skyTop } : undefined);
       }
       ctx.restore();
       if (f.alive) this.hit.push({ uid: f.uid, x: x - u * 0.6, y: y - h0, w: u * 1.2, h: h0 });
-      if (f === front) spot = { x, y: y - h0 * 0.45, r: Math.max(W * 0.5, h0 * 2.2), power: 0.9 };
+      if (f === front) spot = { x, y: y - h0 * 0.8, r: Math.max(W * 0.5, h0 * 2.2), power: 0.9 };
       if (f.alive && f === front && alive.length > 1 && show > 0.9) {
         ctx.fillStyle = INK.sodium;
         ctx.beginPath();
@@ -217,8 +217,15 @@ export class BattleView {
   /** Rim-light colour for sprites this frame (the planet's eerie light), or none. */
   private rim: string | null = null;
 
-  /** Draw into a scratch layer the size of the box, then onto the scene. */
-  private sprite(ctx: CanvasRenderingContext2D, bx: number, by: number, bw: number, bh: number, draw: (c: CanvasRenderingContext2D) => void) {
+  private silhouette: HTMLCanvasElement | null = null;
+
+  /**
+   * Draw into a scratch layer the size of the box, then onto the scene. With `depth`, the figure
+   * gets comic volume: a cast shadow laid on the floor, hard cel shading (lit top, dark underside),
+   * and a haze of the far dark on the ones further back.
+   */
+  private sprite(ctx: CanvasRenderingContext2D, bx: number, by: number, bw: number, bh: number, draw: (c: CanvasRenderingContext2D) => void,
+    depth?: { foot: [number, number]; height: number; haze: number; hazeColor: string }) {
     const sc = ctx.getTransform().a || 1;
     const cw = Math.max(1, Math.ceil(bw * sc));
     const ch = Math.max(1, Math.ceil(bh * sc));
@@ -231,6 +238,50 @@ export class BattleView {
     c.setTransform(sc, 0, 0, sc, -bx * sc, -by * sc);
     c.globalAlpha = 1;
     draw(c);
+    if (depth) {
+      const [fx0, fy0] = depth.foot;
+      const hh = depth.height;
+      // a solid black copy of the figure, laid down on the floor toward the camera, as its cast shadow
+      const sil = (this.silhouette ??= document.createElement('canvas'));
+      if (sil.width < cv.width || sil.height < cv.height) { sil.width = cv.width; sil.height = cv.height; }
+      const s2 = sil.getContext('2d')!;
+      s2.setTransform(1, 0, 0, 1, 0, 0);
+      s2.globalCompositeOperation = 'source-over';
+      s2.clearRect(0, 0, cw, ch);
+      s2.drawImage(cv, 0, 0, cw, ch, 0, 0, cw, ch);
+      s2.globalCompositeOperation = 'source-in';
+      s2.fillStyle = '#000';
+      s2.fillRect(0, 0, cw, ch);
+      ctx.save();
+      ctx.globalAlpha *= 0.42;
+      ctx.transform(1, 0, 0.55, -0.32, fx0, fy0);
+      ctx.drawImage(sil, 0, 0, cw, ch, bx - fx0, by - fy0, bw, bh);
+      ctx.restore();
+      // cel shading: a lit band on top, a hard step into shadow on the lower half, darkest at the feet
+      c.save();
+      c.globalCompositeOperation = 'source-atop';
+      const g = c.createLinearGradient(0, fy0 - hh, 0, fy0);
+      g.addColorStop(0, 'rgba(255,244,220,0.14)');
+      g.addColorStop(0.3, 'rgba(255,244,220,0.04)');
+      g.addColorStop(0.52, 'rgba(0,0,0,0)');
+      g.addColorStop(0.56, 'rgba(0,0,0,0.26)');
+      g.addColorStop(1, 'rgba(0,0,0,0.5)');
+      c.fillStyle = g;
+      c.fillRect(bx, by, bw, bh);
+      // the side away from the spotlight falls off
+      const g2 = c.createLinearGradient(fx0 - hh * 0.6, 0, fx0 + hh * 0.6, 0);
+      g2.addColorStop(0, 'rgba(0,0,0,0.3)');
+      g2.addColorStop(0.45, 'rgba(0,0,0,0)');
+      g2.addColorStop(1, 'rgba(0,0,0,0)');
+      c.fillStyle = g2;
+      c.fillRect(bx, by, bw, bh);
+      if (depth.haze > 0) {
+        c.globalAlpha = depth.haze;
+        c.fillStyle = depth.hazeColor;
+        c.fillRect(bx, by, bw, bh);
+      }
+      c.restore();
+    }
     if (this.rim) {
       // an inked outline, then a thin rim of the planet's eerie light along the top edge
       ctx.save();
@@ -268,7 +319,8 @@ export class BattleView {
   /** A soft contact shadow on the floor, no platform. */
   private shadow(ctx: CanvasRenderingContext2D, x: number, y: number, rx: number, fade: number) {
     const g = ctx.createRadialGradient(x, y, 0, x, y, rx);
-    g.addColorStop(0, `rgba(0,0,0,${0.55 * (1 - fade)})`);
+    g.addColorStop(0, `rgba(0,0,0,${0.8 * (1 - fade)})`);
+    g.addColorStop(0.6, `rgba(0,0,0,${0.55 * (1 - fade)})`);
     g.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = g;
     ctx.save();

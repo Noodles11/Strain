@@ -142,6 +142,10 @@ Everything below is generated from tile hashes (`src/render/texture.ts`, `src/re
 - **Battle:** a spot on the enemies, the clone's glow, the wall lamps, and a flickering eerie light far down the corridor
   (emergency red, cave violet, swamp green); sprites get an ink halo and a thin rim of that eerie colour; mist rolls along the floor.
 - Motes drift through the light on the map.
+- **Mob depth in battle:** each creature casts a solid shadow laid across the floor toward the camera, has a darker contact
+  shadow at its feet, and gets hard cel shading (a lit top band, a sharp step into shadow on its lower half, the far side
+  falling off). Back-row creatures sink into a haze of the corridor dark. Glows that used to spill as a bright patch under
+  some creatures (the Husk's thruster, the Drone's hover, glowing eyes) are now small round glows.
 
 ## Veterans and variation
 
