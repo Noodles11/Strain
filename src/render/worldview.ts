@@ -5,6 +5,7 @@ import { noise } from './sketch';
 import { SNOW, SNOW_SHADE, snowAt, theme } from './theme';
 import { decalAt, floorTex, hash, wallFaceTex, wallTopTex, type DecalShape } from './texture';
 import { EERIE, flicker, Lighting, type Light } from './light';
+import { drawBeaconProp, drawCache, drawDebris, drawDoor, drawEvent, drawNest, drawPod, drawShip, drawSurgery, drawTerminal, drawVat, drawVent, type PropCtx } from './props';
 import { inStorm, inView, isDark, type RunState } from '../core/run';
 import { gateAt, idx, T_FLOOR, T_GATE, T_HAZARD, T_WALL, type Mob, type Poi } from '../world/gen';
 
@@ -349,260 +350,44 @@ export class WorldView {
     ctx.restore();
   }
 
-  private drawGate(ctx: CanvasRenderingContext2D, r: RunState, x: number, y: number, X: number, Y: number, t: number, debris: string) {
+  private prop(r: RunState, x: number, y: number, seed: number, t: number): PropCtx {
+    const T = this.T;
+    return { ctx: null as unknown as CanvasRenderingContext2D, T, cx: this.sx(x) + T / 2, fy: this.sy(y) + T * 0.85, t, planet: r.world.planet, seed };
+  }
+
+  private drawGate(ctx: CanvasRenderingContext2D, r: RunState, x: number, y: number, X: number, Y: number, t: number, _debris: string) {
     const g = gateAt(r.world, x, y)!;
     const T = this.T;
     if (g.open) {
-      ctx.fillStyle = '#1f2125';
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
       ctx.fillRect(X + 2, Y + 2, T - 4, T - 4);
       return;
     }
-    if (g.kind === 'door') {
-      ctx.fillStyle = '#3a3226';
-      ctx.fillRect(X + 1, Y - T * 0.42, T - 2, T * 1.42 - 1);
-      ctx.fillStyle = INK.sodium;
-      ctx.fillRect(X + 1, Y - T * 0.42, T - 2, T * 0.12);
-      for (let k = 0; k < 4; k++) {
-        ctx.fillStyle = k % 2 ? INK.void : INK.sodium;
-        ctx.fillRect(X + 1 + (k * (T - 2)) / 4, Y + T * 0.72, (T - 2) / 4, T * 0.1);
-      }
-      ctx.strokeStyle = INK.void;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(X + T / 2, Y - T * 0.3);
-      ctx.lineTo(X + T / 2, Y + T * 0.7);
-      ctx.stroke();
-    } else {
-      ctx.fillStyle = debris;
-      for (let k = 0; k < 6; k++) {
-        const ox = noise(g.id * 10 + k) * T * 0.3;
-        const oy = noise(g.id * 10 + k + 50) * T * 0.25;
-        ctx.save();
-        ctx.translate(X + T / 2 + ox, Y + T * 0.45 + oy - T * 0.15);
-        ctx.rotate(noise(g.id + k) * 1.2);
-        ctx.fillRect(-T * 0.3, -T * 0.1, T * 0.6, T * 0.2);
-        ctx.strokeStyle = INK.boneDim;
-        ctx.lineWidth = 1;
-        ctx.strokeRect(-T * 0.3, -T * 0.1, T * 0.6, T * 0.2);
-        ctx.restore();
-      }
-    }
-    // rating pips
-    ctx.fillStyle = g.forcible ? INK.bone : INK.flesh;
-    for (let k = 0; k < g.rating; k++) ctx.fillRect(X + 3 + k * 5, Y - T * 0.36, 3, 3);
-    void t;
+    const c = { ...this.prop(r, x, y, g.id, t), ctx };
+    if (g.kind === 'door') drawDoor(c, T * 0.42, g.rating, g.forcible);
+    else drawDebris(c, g.rating, g.forcible);
   }
 
   private drawPoi(ctx: CanvasRenderingContext2D, r: RunState, p: Poi, t: number) {
-    const T = this.T;
-    const X = this.sx(p.x);
-    const Y = this.sy(p.y);
-    const cx = X + T / 2;
-    const fy = Y + T * 0.85;
-    ctx.lineWidth = Math.max(1, T * 0.04);
-    ctx.strokeStyle = INK.bone;
+    const c = { ...this.prop(r, p.x, p.y, p.id, t), ctx };
+    ctx.save();
     switch (p.kind) {
-      case 'cache':
-        ctx.fillStyle = p.used ? '#24262a' : INK.boneDim;
-        ctx.fillRect(cx - T * 0.32, fy - T * 0.5, T * 0.64, T * 0.46);
-        ctx.strokeRect(cx - T * 0.32, fy - T * 0.5, T * 0.64, T * 0.46);
-        if (!p.used) {
-          ctx.fillStyle = INK.sodium;
-          ctx.fillRect(cx - T * 0.32, fy - T * 0.34, T * 0.64, T * 0.07);
-        }
-        break;
-      case 'vent': {
-        ctx.fillStyle = '#1c1e21';
-        ctx.beginPath();
-        ctx.ellipse(cx, fy - T * 0.2, T * 0.36, T * 0.22, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-        for (let k = -2; k <= 2; k++) {
-          ctx.beginPath();
-          ctx.moveTo(cx + k * T * 0.1, fy - T * 0.36);
-          ctx.lineTo(cx + k * T * 0.1, fy - T * 0.04);
-          ctx.stroke();
-        }
-        if (!p.used) {
-          for (let k = 0; k < 3; k++) {
-            const ph = (t * 0.6 + k / 3) % 1;
-            ctx.fillStyle = `rgba(216,207,184,${0.35 * (1 - ph)})`;
-            ctx.beginPath();
-            ctx.arc(cx + Math.sin(ph * 6 + k) * T * 0.1, fy - T * 0.3 - ph * T * 0.9, T * (0.1 + ph * 0.15), 0, Math.PI * 2);
-            ctx.fill();
-          }
-          ctx.fillStyle = INK.sodium;
-          ctx.fillRect(cx - T * 0.05, fy - T * 0.24, T * 0.1, T * 0.06);
-        }
-        break;
-      }
-      case 'nest': {
-        if (p.used) {
-          ctx.fillStyle = '#2a1a1c';
-          ctx.beginPath();
-          ctx.ellipse(cx, fy - T * 0.12, T * 0.4, T * 0.16, 0, 0, Math.PI * 2);
-          ctx.fill();
-          break;
-        }
-        const pulse = 1 + Math.sin(t * 3) * 0.06;
-        ctx.fillStyle = INK.fleshDark;
-        ctx.beginPath();
-        ctx.ellipse(cx, fy - T * 0.3, T * 0.42 * pulse, T * 0.32 * pulse, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-        ctx.fillStyle = INK.flesh;
-        for (let k = 0; k < 4; k++) {
-          ctx.beginPath();
-          ctx.arc(cx + noise(p.id + k) * T * 0.25, fy - T * 0.34 + noise(p.id + k + 9) * T * 0.12, T * 0.07, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        break;
-      }
-      case 'pod': {
-        // a glass tube with something suspended in it
-        const spent = (p.buys ?? 0) >= 2;
-        ctx.fillStyle = '#1c1e21';
-        ctx.fillRect(cx - T * 0.3, fy - T * 0.12, T * 0.6, T * 0.12);
-        ctx.fillStyle = spent ? '#2c3a3a' : INK.cryo;
-        ctx.globalAlpha = spent ? 0.6 : 0.55 + 0.15 * Math.sin(t * 2 + p.id);
-        ctx.fillRect(cx - T * 0.22, fy - T * 0.95, T * 0.44, T * 0.83);
-        ctx.globalAlpha = 1;
-        ctx.strokeRect(cx - T * 0.22, fy - T * 0.95, T * 0.44, T * 0.83);
-        if (!spent) {
-          ctx.fillStyle = INK.fleshDark;
-          ctx.beginPath();
-          ctx.ellipse(cx, fy - T * 0.55 + Math.sin(t * 1.3) * T * 0.04, T * 0.1, T * 0.16, 0, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = INK.bone;
-          for (let k = 0; k < 3; k++) {
-            const ph = (t * 0.5 + k / 3) % 1;
-            ctx.fillRect(cx - T * 0.12 + k * T * 0.1, fy - T * 0.2 - ph * T * 0.65, 2, 2);
-          }
-        }
-        ctx.fillStyle = INK.hullLit;
-        ctx.fillRect(cx - T * 0.26, fy - T * 1.02, T * 0.52, T * 0.1);
-        break;
-      }
-      case 'vat': {
-        // a wide print vat, drained: cracked glass, a dark residue line, cables to the floor
-        ctx.fillStyle = '#1c1e21';
-        ctx.fillRect(cx - T * 0.38, fy - T * 0.14, T * 0.76, T * 0.14);
-        ctx.fillStyle = '#26343a';
-        ctx.fillRect(cx - T * 0.3, fy - T * 0.9, T * 0.6, T * 0.76);
-        ctx.strokeStyle = INK.boneDim;
-        ctx.strokeRect(cx - T * 0.3, fy - T * 0.9, T * 0.6, T * 0.76);
-        ctx.fillStyle = INK.fleshDark;
-        ctx.fillRect(cx - T * 0.28, fy - T * 0.24, T * 0.56, T * 0.08);
-        ctx.strokeStyle = INK.bone;
-        ctx.beginPath();
-        ctx.moveTo(cx + T * 0.08, fy - T * 0.9);
-        ctx.lineTo(cx - T * 0.02, fy - T * 0.66);
-        ctx.lineTo(cx + T * 0.1, fy - T * 0.5);
-        ctx.stroke();
-        ctx.fillStyle = INK.sodium;
-        ctx.globalAlpha = 0.5 + 0.4 * Math.sin(t * 2.5 + p.id);
-        ctx.fillRect(cx - T * 0.05, fy - T * 1.0, T * 0.1, T * 0.06);
-        ctx.globalAlpha = 1;
-        ctx.fillStyle = INK.hullLit;
-        ctx.fillRect(cx - T * 0.34, fy - T * 0.97, T * 0.68, T * 0.08);
-        break;
-      }
-      case 'terminal': {
-        ctx.fillStyle = INK.hullLit;
-        ctx.fillRect(cx - T * 0.3, fy - T * 0.75, T * 0.6, T * 0.72);
-        ctx.strokeRect(cx - T * 0.3, fy - T * 0.75, T * 0.6, T * 0.72);
-        const on = (p.buys ?? 0) < 2;
-        ctx.fillStyle = on ? INK.toxin : '#203024';
-        ctx.globalAlpha = on ? 0.6 + 0.3 * Math.sin(t * 5 + p.id) : 1;
-        ctx.fillRect(cx - T * 0.22, fy - T * 0.66, T * 0.44, T * 0.28);
-        ctx.globalAlpha = 1;
-        ctx.fillStyle = INK.boneDim;
-        ctx.fillRect(cx - T * 0.18, fy - T * 0.28, T * 0.36, T * 0.1);
-        break;
-      }
-      case 'surgery': {
-        ctx.fillStyle = INK.boneDim;
-        ctx.fillRect(cx - T * 0.38, fy - T * 0.36, T * 0.76, T * 0.18);
-        ctx.strokeRect(cx - T * 0.38, fy - T * 0.36, T * 0.76, T * 0.18);
-        ctx.strokeStyle = INK.boneDim;
-        ctx.beginPath();
-        ctx.moveTo(cx - T * 0.3, fy - T * 0.18);
-        ctx.lineTo(cx - T * 0.3, fy);
-        ctx.moveTo(cx + T * 0.3, fy - T * 0.18);
-        ctx.lineTo(cx + T * 0.3, fy);
-        ctx.moveTo(cx, fy - T * 0.36);
-        ctx.lineTo(cx, fy - T * 0.95);
-        ctx.stroke();
-        ctx.fillStyle = INK.sodium;
-        ctx.beginPath();
-        ctx.arc(cx, fy - T * 0.95, T * 0.1, 0, Math.PI * 2);
-        ctx.fill();
-        break;
-      }
-      case 'event': {
-        if (p.used) {
-          ctx.fillStyle = '#26282c';
-          ctx.fillRect(cx - T * 0.2, fy - T * 0.2, T * 0.4, T * 0.2);
-          break;
-        }
-        const glow = 0.5 + 0.5 * Math.sin(t * 3 + p.id);
-        ctx.fillStyle = INK.signal;
-        ctx.globalAlpha = 0.25 + 0.2 * glow;
-        ctx.beginPath();
-        ctx.ellipse(cx, fy - T * 0.4, T * 0.4, T * 0.45, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.globalAlpha = 1;
-        ctx.fillStyle = INK.bone;
-        ctx.font = `700 ${Math.round(T * 0.6)}px "Bebas Neue", sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.fillText('?', cx, fy - T * 0.2);
-        ctx.textAlign = 'left';
-        break;
-      }
-      case 'ship': {
-        const s = T * 0.9;
-        ctx.fillStyle = INK.hullLit;
-        ctx.beginPath();
-        ctx.moveTo(cx - s * 0.8, fy);
-        ctx.lineTo(cx - s * 0.5, fy - s * 0.7);
-        ctx.lineTo(cx, fy - s * 1.1);
-        ctx.lineTo(cx + s * 0.5, fy - s * 0.7);
-        ctx.lineTo(cx + s * 0.8, fy);
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-        ctx.fillStyle = r.bossDead ? INK.toxin : INK.sodium;
-        ctx.globalAlpha = 0.6 + 0.4 * Math.sin(t * 3);
-        ctx.fillRect(cx - s * 0.18, fy - s * 0.75, s * 0.36, s * 0.12);
-        ctx.globalAlpha = 1;
-        ctx.strokeStyle = INK.boneDim;
-        ctx.beginPath();
-        ctx.moveTo(cx - s * 0.6, fy);
-        ctx.lineTo(cx - s * 0.9, fy + s * 0.12);
-        ctx.moveTo(cx + s * 0.6, fy);
-        ctx.lineTo(cx + s * 0.9, fy + s * 0.12);
-        ctx.stroke();
-        break;
-      }
+      case 'cache': drawCache(c, p.used); break;
+      case 'vent': drawVent(c, p.used); break;
+      case 'nest': drawNest(c, p.used); break;
+      case 'pod': drawPod(c, (p.buys ?? 0) >= 2); break;
+      case 'vat': drawVat(c); break;
+      case 'terminal': drawTerminal(c, (p.buys ?? 0) < 2); break;
+      case 'surgery': drawSurgery(c); break;
+      case 'event': drawEvent(c, p.used); break;
+      case 'ship': drawShip(c, r.bossDead); break;
     }
+    ctx.restore();
   }
 
   private drawBeacon(ctx: CanvasRenderingContext2D, x: number, y: number, used: boolean, t: number) {
     const T = this.T;
-    const cx = this.sx(x) + T / 2;
-    const fy = this.sy(y) + T * 0.85;
-    ctx.strokeStyle = INK.boneDim;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(cx, fy);
-    ctx.lineTo(cx, fy - T * 0.7);
-    ctx.stroke();
-    ctx.fillStyle = used ? INK.boneDim : INK.sodium;
-    ctx.globalAlpha = used ? 0.6 : 0.6 + 0.4 * Math.sin(t * 4);
-    ctx.beginPath();
-    ctx.arc(cx, fy - T * 0.72, T * 0.08, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.globalAlpha = 1;
+    drawBeaconProp({ ctx, T, cx: this.sx(x) + T / 2, fy: this.sy(y) + T * 0.85, t, planet: 'derelict', seed: x * 31 + y }, used);
   }
 
   private drawMob(ctx: CanvasRenderingContext2D, r: RunState, m: Mob, t: number) {

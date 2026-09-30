@@ -156,6 +156,15 @@ Everything below is generated from tile hashes (`src/render/texture.ts`, `src/re
 - **Battle:** a spot on the enemies, the clone's glow, the wall lamps, and a flickering eerie light far down the corridor
   (emergency red, cave violet, swamp green); sprites get an ink halo and a thin rim of that eerie colour; mist rolls along the floor.
 - Motes drift through the light on the map.
+- **Map props** (`src/render/props.ts`) share the look: solid three-quarter shapes with a lit top, a shaded front, a hard
+  shadow band, an ink outline and a contact shadow. Caches are strapped lockers with a blinking latch (wooden crates on Mireth,
+  frost-rimmed on Kessra) that sit open and dark once looted; vents are grilled collars with an ember glow and steam; nests are
+  heaps of flesh lobes with veins, burrows and glistening sacs, a charred ring once burnt; splice pods are glass tubes with a
+  half-grown body and rising bubbles; empty vats are cracked drained tanks still wired to the sequencer; terminals are consoles
+  with a scrolling green screen; surgery bays are stained tables under a lamp arm; events are leaning black monoliths with a
+  glowing violet glyph; the ship is a squat lander on legs with a cockpit, a lit ramp, nav lights and engine shimmer when ready.
+  Doors are framed blast doors with hazard chevrons and a lock lamp; debris is a heap of beams (crystal slabs on Kessra, fallen
+  trunks on Mireth); beacons stand on tripods.
 - **The clone** is a bare, hairless printed humanoid in pale vat skin, inked in near-black (`src/render/clone.ts`).
   On the map it is a small 3D-posed figure with a walk cycle (legs stride, arms swing against them, the body bobs), turned to
   face its way: front (blank face, dark eyes), side (profile) or back (spine and skull socket). In battle it is seen over the
