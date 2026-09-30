@@ -23,6 +23,9 @@ export class WorldView {
   W = 0;
   H = 0;
   private lighting = new Lighting();
+  /** Where each mob is drawn: it glides toward its tile instead of jumping, and faces where it walks. */
+  private mobPos = new Map<number, { x: number; y: number; face: number; last: number }>();
+  private dt = 0;
 
   resize(W: number, H: number) {
     this.W = W;
@@ -49,6 +52,7 @@ export class WorldView {
     const T = this.T;
     const th = theme(w.planet);
     if (!this.snapped) { this.camX = px; this.camY = py; this.snapped = true; }
+    this.dt = dt;
     const k = 1 - Math.exp(-dt * 10);
     this.camX += (px - this.camX) * k;
     this.camY += (py - this.camY) * k;
@@ -392,8 +396,22 @@ export class WorldView {
 
   private drawMob(ctx: CanvasRenderingContext2D, r: RunState, m: Mob, t: number) {
     const T = this.T;
-    const cx = this.sx(m.x) + T / 2;
-    const fy = this.sy(m.y) + T * 0.88;
+    let pos = this.mobPos.get(m.id);
+    // a mob that jumped far (respawn, a new map) snaps instead of sliding across the screen
+    if (!pos || Math.abs(pos.x - m.x) + Math.abs(pos.y - m.y) > 2.5) {
+      pos = { x: m.x, y: m.y, face: 1, last: t };
+      this.mobPos.set(m.id, pos);
+    }
+    const k = 1 - Math.exp(-this.dt * 7);
+    const dxm = m.x - pos.x;
+    if (Math.abs(dxm) > 0.05) pos.face = dxm > 0 ? 1 : -1;
+    pos.x += dxm * k;
+    pos.y += (m.y - pos.y) * k;
+    const moving = Math.abs(m.x - pos.x) + Math.abs(m.y - pos.y) > 0.04;
+    if (moving) pos.last = t;
+    const hop = t - pos.last < 0.3 || moving ? Math.abs(Math.sin(t * 12 + m.id)) * T * 0.06 : 0;
+    const cx = this.sx(pos.x) + T / 2;
+    const fy = this.sy(pos.y) + T * 0.88;
     const id = m.foes[0];
     const size = CREATURE_SIZE[id] ?? 1;
     const u = m.kind === 'boss' ? T * 1.1 : Math.min(T * 0.9, (T * 1.25) / size);
@@ -410,7 +428,11 @@ export class WorldView {
     }
     const ambushed = m.kind === 'ambush';
     if (ambushed) ctx.globalAlpha = 0.45 + 0.2 * Math.sin(t * 5);
-    drawCreature(ctx, id, cx, fy, u, { t: t + m.id, boil: Math.floor(t * 6) * 3, flash: 0, lunge: 0, dead: 0, seed: (m.id % 97) / 97, dim: 0, state: id === 'sleeper' ? 1 : 0 });
+    ctx.save();
+    // creatures are drawn facing right; mirror them when they walk left
+    if (pos.face < 0) { ctx.translate(cx * 2, 0); ctx.scale(-1, 1); }
+    drawCreature(ctx, id, cx, fy - hop, u, { t: t + m.id, boil: Math.floor(t * 6) * 3, flash: 0, lunge: 0, dead: 0, seed: (m.id % 97) / 97, dim: 0, state: id === 'sleeper' ? 1 : 0 });
+    ctx.restore();
     ctx.globalAlpha = 1;
     if (m.foes.length > 1) {
       ctx.fillStyle = INK.void;

@@ -554,7 +554,19 @@ function mobVision(r: RunState): number {
   return Math.max(1, 5 - Math.floor(runTraits(r).rfx / 3));
 }
 
-function moveMobs(r: RunState) {
+/**
+ * The world's own clock: called a few times a second while you stand still, so mobs keep
+ * wandering (and chasers keep closing in) in real time, not only when you take a step.
+ * Returns true if anything moved.
+ */
+export function mobsTick(r: RunState): boolean {
+  if (r.mode !== 'explore') return false;
+  const before = r.world.mobs.map((m) => m.x * 4096 + m.y).join();
+  moveMobs(r, true);
+  return before !== r.world.mobs.map((m) => m.x * 4096 + m.y).join();
+}
+
+function moveMobs(r: RunState, idle = false) {
   const w = r.world;
   let contact: { m: Mob; how: 'mob' | 'behind' } | null = null;
   withRng(r, (rng) => {
@@ -592,13 +604,18 @@ function moveMobs(r: RunState) {
           best = nd;
           dir = [dx, dy];
         }
-      } else if (rng.next() < 0.35) {
-        const [dx, dy] = rng.pick([[0, -1], [1, 0], [0, 1], [-1, 0]] as [number, number][]);
+      } else if (rng.next() < (idle ? 0.45 : 0.35)) {
+        // idle wander: mostly keep heading the same way, sometimes turn, never stray far from home
+        const dirs = [[0, -1], [1, 0], [0, 1], [-1, 0]] as [number, number][];
+        const last = m.dir && rng.next() < 0.6 ? m.dir : rng.pick(dirs);
+        const [dx, dy] = last;
         const nx = m.x + dx;
         const ny = m.y + dy;
-        if (Math.abs(nx - m.hx) + Math.abs(ny - m.hy) <= 3 && walkable(r, nx, ny) && !mobAt(r, nx, ny) && !(nx === r.x && ny === r.y)) dir = [dx, dy];
+        if (Math.abs(nx - m.hx) + Math.abs(ny - m.hy) <= 4 && walkable(r, nx, ny) && !mobAt(r, nx, ny) && !(nx === r.x && ny === r.y)) dir = [dx, dy];
+        else m.dir = undefined;
       }
       if (!dir) continue;
+      m.dir = dir;
       const fromBehind = r.facing[0] === dir[0] && r.facing[1] === dir[1];
       m.x += dir[0];
       m.y += dir[1];

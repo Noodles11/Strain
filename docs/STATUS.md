@@ -55,6 +55,14 @@ Bot sim, two landings (rushes each boss, 20 seeds):
 | all 7 | 18 | 2 | 0 |
 | all 9 | 20 | 0 | 0 |
 
+## Real-time mobs
+
+- Mobs no longer wait for your steps: every 0.8 s on the map (while no menu is open and you aren't walking a path) the world
+  ticks. Wanderers stroll around their home, mostly keeping their heading and sometimes turning, never more than 4 tiles
+  from home; chasers that have spotted you keep closing in, and one that reaches you starts the fight (from behind if you
+  face away). Your steps still move them too, as before.
+- On screen they glide between tiles with a small hop, and turn to face the way they walk.
+
 ## Hand, discard and loot (rules change)
 
 - **Hands carry over:** cards you don't play stay in hand. At the start of each turn the hand is topped back up to hand

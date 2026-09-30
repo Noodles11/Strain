@@ -8,7 +8,7 @@ import { foeInfo, playerInfo } from './unitinfo';
 import { canRaise, loadMeta, markLanded, newMeta, raise, RUN_KEY, saveMeta, settleRun, type Meta } from '../core/meta';
 import {
   actionsAt, bDiscard, bEnd, bFlee, bPick, bPlay, canExcise, chartOptions, goHome, here, land, describeAt, doAction, excise, exciseCost, expCard, expUsable, isInteractable, isSelfCard, migrateRun,
-  lootTake, maxHp, mobAt, newRun, pathTo, playExp, rewardPick, runTraits, step, stormIn,
+  lootTake, maxHp, mobsTick, mobAt, newRun, pathTo, playExp, rewardPick, runTraits, step, stormIn,
   takeEvents, travel, travelPoints, type RunState,
 } from '../core/run';
 import {
@@ -385,6 +385,7 @@ export class App {
         this.drawX += (r.x - this.drawX) * k;
         this.drawY += (r.y - this.drawY) * k;
         const moving = Math.abs(r.x - this.drawX) + Math.abs(r.y - this.drawY) > 0.05;
+        this.worldClock(r, dt);
         this.wv.draw(ctx, r, t, dt, this.drawX, this.drawY, moving || !!this.walk, this.walk?.path ?? []);
       }
       if (this.print && this.glCanvas) this.print.render(this.src, this.dpr, t, strength);
@@ -393,6 +394,21 @@ export class App {
   }
 
   // ---------------------------------------------------------------- explore
+
+  private clock = 0;
+  private clockSaved = 0;
+
+  /** Mobs live in real time: while you stand and look, they keep wandering and hunting. */
+  private worldClock(r: RunState, dt: number) {
+    if (r.mode !== 'explore' || this.sheet || this.walk || r.notice || this.layout !== 'explore') { this.clock = 0; return; }
+    if (this.root.querySelector('.detail-layer')) return;
+    this.clock += dt;
+    if (this.clock < 0.8) return;
+    this.clock = 0;
+    const moved = mobsTick(r);
+    if ((r.mode as string) === 'battle') { this.saveRun(); this.afterAction(); return; }
+    if (moved && performance.now() - this.clockSaved > 3000) { this.clockSaved = performance.now(); this.saveRun(); }
+  }
 
   private tapWorld(px: number, py: number) {
     const r = this.run;

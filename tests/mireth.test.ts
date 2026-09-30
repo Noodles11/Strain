@@ -5,7 +5,7 @@ import { ENEMIES } from '../src/core/enemies';
 import { newMeta } from '../src/core/meta';
 import { PLANETS, planetDepth } from '../src/core/planets';
 import { Rng } from '../src/core/rng';
-import { actionsAt, bAuto, chartOptions, doAction, land, lootTake, maxHp, newRun, step } from '../src/core/run';
+import { actionsAt, bAuto, chartOptions, doAction, land, lootTake, maxHp, mobsTick, newRun, step } from '../src/core/run';
 import { traits } from '../src/core/traits';
 import { generateWorld, reachable } from '../src/world/gen';
 
@@ -207,5 +207,19 @@ describe('hand, discard and after-fight loot', () => {
     doAction(r, vat.x, vat.y, 'mend:full');
     expect(r.hp).toBe(maxHp(r));
     expect(r.biomass).toBeLessThan(50);
+  });
+});
+
+describe('real-time mobs', () => {
+  it('wander on their own clock while the clone stands still, near home', () => {
+    const r = newRun(newMeta(), 11);
+    const packs = r.world.mobs.filter((m) => m.alive && m.kind === 'pack' && Math.abs(m.x - r.x) + Math.abs(m.y - r.y) > 8);
+    for (const m of packs) m.chaser = false;
+    const start = packs.map((m) => [m.x, m.y]);
+    let moved = false;
+    for (let i = 0; i < 40 && r.mode === 'explore'; i++) moved = mobsTick(r) || moved;
+    expect(moved).toBe(true);
+    expect(r.x).toBe(r.world.ship.x);
+    packs.forEach((m, i) => expect(Math.abs(m.x - m.hx) + Math.abs(m.y - m.hy)).toBeLessThanOrEqual(4 + 0 * start[i][0]));
   });
 });

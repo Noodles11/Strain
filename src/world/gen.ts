@@ -75,6 +75,8 @@ export interface Mob {
   spotted: boolean;
   /** Nest that spawned it. */
   nest?: number;
+  /** Last step taken, so wandering keeps a heading. */
+  dir?: [number, number];
 }
 
 export interface World {
