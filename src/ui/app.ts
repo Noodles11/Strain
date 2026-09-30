@@ -588,12 +588,21 @@ export class App {
         return f ? fxLead(this.bv.strike(e.uid, f.id, e.hits), e.hits) : undefined;
       }
       case 'text': this.lines.push(e.s); if (this.lines.length > 2) this.lines.shift(); break;
-      case 'hitFoe': this.dispFoe.set(e.uid, (this.dispFoe.get(e.uid) ?? 0) - e.n); this.bv.anim(e.uid).flash = 1; break;
-      case 'hitPlayer': this.dispP -= e.n; this.bv.player.flash = e.n > 0 ? 1 : 0.3; this.bv.shake = e.n > 0 ? Math.min(1, 0.3 + e.n / 20) : 0; break;
-      case 'healFoe': this.dispFoe.set(e.uid, (this.dispFoe.get(e.uid) ?? 0) + e.n); break;
-      case 'act': this.bv.anim(e.uid).lunge = 1; this.actedSoon(e.uid); break;
+      case 'hitFoe':
+        this.dispFoe.set(e.uid, (this.dispFoe.get(e.uid) ?? 0) - e.n); this.bv.anim(e.uid).flash = 1;
+        this.bv.float(e.uid, e.n > 0 ? `-${e.n}` : 'BLOCKED', e.n > 0 ? '#ff6a55' : '#d8cfb8', e.n > 0);
+        break;
+      case 'hitPlayer':
+        this.dispP -= e.n; this.bv.player.flash = e.n > 0 ? 1 : 0.3; this.bv.shake = e.n > 0 ? Math.min(1, 0.3 + e.n / 20) : 0;
+        this.bv.float('p', e.n > 0 ? `-${e.n}` : 'BLOCKED', e.n > 0 ? '#ff6a55' : '#9fd2e4', e.n > 0);
+        break;
+      case 'healFoe': this.dispFoe.set(e.uid, (this.dispFoe.get(e.uid) ?? 0) + e.n); if (e.n > 0) this.bv.float(e.uid, `+${e.n}`, '#9fd08a', true); break;
+      case 'plate': if (e.n) this.bv.float(e.who, `+${e.n} PLATE`, '#9fd2e4'); break;
+      case 'status': if (e.s) this.bv.float(e.who, e.s, e.s.startsWith('ROT') ? '#c4d86a' : '#c79ae8'); break;
+      case 'float': this.bv.float(e.who, e.s, INK.sodium); break;
+      case 'act': this.bv.anim(e.uid).lunge = 1; this.actedSoon(e.uid); if (e.label) this.bv.float(e.uid, e.label, INK.sodium); break;
       case 'die': this.bv.anim(e.uid).dead = 0.01; break;
-      case 'heal': this.dispP += e.n; this.bv.player.heal = 1; break;
+      case 'heal': this.dispP += e.n; this.bv.player.heal = 1; if (e.n > 0) this.bv.float('p', `+${e.n}`, '#9fd08a', true); break;
       case 'summon': this.hidden.delete(e.uid); break;
       default: break;
     }
@@ -638,6 +647,108 @@ export class App {
     this.refresh();
   }
 
+  /** The enemy under a screen point: its plate, or its body in the scene. */
+  private foeAt(px: number, py: number): number | undefined {
+    const el = document.elementFromPoint(px, py) as HTMLElement | null;
+    const plate = el?.closest<HTMLElement>('.plates [data-f]');
+    if (plate) return Number(plate.dataset.f);
+    const cv = this.root.querySelector<HTMLElement>('.scene canvas');
+    if (!cv) return undefined;
+    const rc = cv.getBoundingClientRect();
+    const x = px - rc.left;
+    const y = py - rc.top;
+    const h = this.bv.hit.find((q) => x >= q.x - 10 && x <= q.x + q.w + 10 && y >= q.y - 10 && y <= q.y + q.h + 10);
+    return h?.uid;
+  }
+
+  /**
+   * A card in hand can be dragged up onto an enemy (its plate or its body) to play it at that
+   * enemy, dragged up anywhere over the scene to play it at the current target, or swiped down
+   * to throw it away. A plain tap still plays it.
+   */
+  private dragCard(el: HTMLElement, uid: number) {
+    let start: { x: number; y: number; id: number } | null = null;
+    let mode: 'none' | 'up' | 'down' = 'none';
+    let ghost: HTMLElement | null = null;
+    let over: number | undefined;
+    const mark = (u: number | undefined) => {
+      over = u;
+      this.bv.dropTarget = u ?? -1;
+      this.root.querySelectorAll<HTMLElement>('.plates [data-f]').forEach((p) => p.classList.toggle('drop', Number(p.dataset.f) === u));
+    };
+    const clear = () => {
+      ghost?.remove();
+      ghost = null;
+      el.style.transform = '';
+      el.style.opacity = '';
+      mark(undefined);
+      mode = 'none';
+      start = null;
+    };
+    el.addEventListener('pointerdown', (e) => { start = { x: e.clientX, y: e.clientY, id: e.pointerId }; mode = 'none'; el.style.transition = 'none'; });
+    el.addEventListener('pointermove', (e) => {
+      if (!start || e.pointerId !== start.id) return;
+      const dx = e.clientX - start.x;
+      const dy = e.clientY - start.y;
+      if (mode === 'none') {
+        if (dy < -12 && -dy > Math.abs(dx) * 0.6 && !this.busy() && !this.run?.battle?.pending) {
+          mode = 'up';
+          el.setPointerCapture?.(e.pointerId);
+          const card = el.querySelector<HTMLElement>('.card');
+          if (card) {
+            const rc = card.getBoundingClientRect();
+            ghost = card.cloneNode(true) as HTMLElement;
+            ghost.classList.add('drag-ghost');
+            ghost.style.width = `${rc.width}px`;
+            ghost.style.height = `${rc.height}px`;
+            document.body.appendChild(ghost);
+            el.style.opacity = '0.25';
+          }
+        } else if (dy > 8 && dy > Math.abs(dx)) {
+          mode = 'down';
+          el.setPointerCapture?.(e.pointerId);
+        }
+      }
+      if (mode === 'up' && ghost) {
+        ghost.style.left = `${e.clientX}px`;
+        ghost.style.top = `${e.clientY}px`;
+        const u = this.foeAt(e.clientX, e.clientY);
+        const alive = this.run?.battle?.foes.find((f) => f.uid === u && f.alive);
+        mark(alive ? u : undefined);
+        ghost.classList.toggle('on-target', !!alive);
+      } else if (mode === 'down') {
+        el.style.transform = `translateY(${dy}px) rotate(${dx * 0.05}deg)`;
+        el.style.opacity = String(Math.max(0.25, 1 - dy / 160));
+      }
+    });
+    el.addEventListener('pointerup', (e) => {
+      if (!start) return;
+      const dx = e.clientX - start.x;
+      const dy = e.clientY - start.y;
+      if (mode === 'up') {
+        const target = over;
+        const hand = this.root.querySelector<HTMLElement>('.hand')?.getBoundingClientRect();
+        const aboveHand = !hand || e.clientY < hand.top - 10;
+        clear();
+        if (target !== undefined) { this.bv.target = target; this.tapCard(uid); }
+        else if (aboveHand) this.tapCard(uid);
+        return;
+      }
+      if (mode === 'down' && dy > 60 && dy > Math.abs(dx) * 1.2) {
+        el.style.transition = 'transform 0.12s, opacity 0.12s';
+        el.style.transform = 'translateY(220px)';
+        el.style.opacity = '0';
+        start = null;
+        mode = 'none';
+        window.setTimeout(() => this.discardCard(uid), 120);
+        return;
+      }
+      el.style.transition = 'transform 0.15s, opacity 0.15s';
+      clear();
+    });
+    el.addEventListener('pointercancel', clear);
+  }
+
   private discardCard(uid: number) {
     const r = this.run;
     if (!r?.battle || this.busy() || r.battle.phase !== 'player') { this.refresh(); return; }
@@ -672,7 +783,7 @@ export class App {
     const c = b.hand.find((q) => q.uid === uid);
     if (!c) return;
     const ok = playable(b, c);
-    if (!ok.ok) { if (ok.why) { this.lines = [ok.why]; this.refreshBattle(); } return; }
+    if (!ok.ok) { if (ok.why) this.bv.float('p', ok.why.toUpperCase(), '#d8cfb8'); return; }
     this.bv.player.lunge = 1;
     this.play(bPlay(r, uid, this.target()));
   }
@@ -808,7 +919,9 @@ export class App {
         me.addEventListener('click', () => { const rr = this.run; if (rr?.battle) this.showInfo(playerInfo(rr, rr.battle, cloneName(rr.clone))); });
       }
     }
-    const tb = this.root.querySelector('.textbox');
+    const tb = this.root.querySelector<HTMLElement>('.textbox');
+    // the log box is gone: everything shows as pop-ups; it only returns to ask you to pick a card
+    if (tb) tb.style.display = b.pending ? '' : 'none';
     if (tb) {
       const pend = b.pending ? [b.pending.kind === 'donor' ? 'Choose a card to feed.' : 'Choose a card to eat.'] : [];
       const lines = pend.length && quiet ? pend : this.lines;
@@ -830,7 +943,7 @@ export class App {
       hand.querySelectorAll<HTMLElement>('[data-c]').forEach((el) => {
         const uid = Number(el.dataset.c);
         press(el, () => this.tapCard(uid));
-        swipeDown(el, () => this.discardCard(uid));
+        this.dragCard(el, uid);
       });
     }
     const en = this.root.querySelector('.energy');
@@ -1075,37 +1188,6 @@ export class App {
 let longPressed = false;
 
 /** Tap handler that ignores the release of a long press (long presses open card details, see App). */
-/** Drag a card down past a threshold to throw it away; it follows the finger until released. */
-function swipeDown(el: HTMLElement, done: () => void) {
-  let start: { x: number; y: number; id: number } | null = null;
-  const reset = () => { el.style.transform = ''; el.style.opacity = ''; el.style.transition = 'transform 0.15s, opacity 0.15s'; };
-  el.addEventListener('pointerdown', (e) => { start = { x: e.clientX, y: e.clientY, id: e.pointerId }; el.style.transition = 'none'; });
-  el.addEventListener('pointermove', (e) => {
-    if (!start || e.pointerId !== start.id) return;
-    const dy = e.clientY - start.y;
-    const dx = e.clientX - start.x;
-    if (dy > 8 && dy > Math.abs(dx)) {
-      el.setPointerCapture?.(e.pointerId);
-      el.style.transform = `translateY(${dy}px) rotate(${dx * 0.05}deg)`;
-      el.style.opacity = String(Math.max(0.25, 1 - dy / 160));
-    }
-  });
-  const end = (e: PointerEvent) => {
-    if (!start) return;
-    const dy = e.clientY - start.y;
-    const dx = e.clientX - start.x;
-    start = null;
-    if (dy > 60 && dy > Math.abs(dx) * 1.2) {
-      el.style.transition = 'transform 0.12s, opacity 0.12s';
-      el.style.transform = 'translateY(220px)';
-      el.style.opacity = '0';
-      window.setTimeout(done, 120);
-    } else reset();
-  };
-  el.addEventListener('pointerup', end);
-  el.addEventListener('pointercancel', () => { start = null; reset(); });
-}
-
 function press(el: HTMLElement, tap: () => void) {
   let start: { x: number; y: number } | null = null;
   el.addEventListener('pointerdown', (e) => { start = { x: e.clientX, y: e.clientY }; });

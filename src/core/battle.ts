@@ -65,12 +65,14 @@ export type BattleEv =
   | { k: 'text'; s: string }
   | { k: 'hitFoe'; uid: number; n: number }
   | { k: 'hitPlayer'; n: number }
-  | { k: 'act'; uid: number }
+  | { k: 'act'; uid: number; label?: string }
   | { k: 'die'; uid: number }
   | { k: 'heal'; n: number }
-  | { k: 'plate'; who: 'p' | number }
+  | { k: 'plate'; who: 'p' | number; n?: number }
   | { k: 'summon'; uid: number }
-  | { k: 'status'; who: 'p' | number }
+  | { k: 'status'; who: 'p' | number; s?: string }
+  /** A short word to float over a fighter (a card growing, a first strike). */
+  | { k: 'float'; who: 'p' | number; s: string }
   /** A card is played: the view animates its attack or effect. */
   | { k: 'card'; id: string; target?: number; hits: number }
   /** An enemy attacks: the view animates the blow. */
@@ -219,13 +221,14 @@ export function startBattle(setup: BattleSetup, rng: Rng, tierBonus: number, hpM
   const ev: BattleEv[] = [];
   if (s.ambush) for (const f of foes) if (f.asleep) { f.asleep = false; f.plate = 0; }
   const names = foes.map(NAME);
+  if (s.ambush) ev.push({ k: 'float', who: 'p', s: 'AMBUSH!' });
   if (s.ambush) ev.push({ k: 'text', s: `AMBUSH! ${names.join(' and ')} ${names.length > 1 ? 'drop' : 'drops'} on you!` });
   else if (foes.some((f) => ENEMIES[f.id].rank === 'boss')) ev.push({ k: 'text', s: `${names[0]} rises to meet you.` });
   else ev.push({ k: 'text', s: `${names.join(' and ')} ${names.length > 1 ? 'block' : 'blocks'} the way!` });
 
   const foeSpeed = Math.max(...foes.map((f) => ENEMIES[f.id].speed + f.tier));
   const enemyFirst = s.ambush || (!s.firstStrike && foeSpeed > s.base.rfx);
-  if (s.firstStrike) ev.push({ k: 'text', s: 'You strike first.' });
+  if (s.firstStrike) ev.push({ k: 'text', s: 'You strike first.' }, { k: 'float', who: 'p', s: 'FIRST STRIKE' });
   if (enemyFirst) {
     if (!s.ambush) ev.push({ k: 'text', s: `${names[0]} is faster!` });
     s.noFlee = true;
@@ -372,7 +375,7 @@ function consume(s: BattleState, c: CardInst, ev: BattleEv[]) {
 function grew(s: BattleState, ev: BattleEv[], dyn: Dyn, text: (name: string) => string, only?: CardInst[]) {
   const pool = only ?? [...s.hand, ...s.draw, ...s.discard];
   const c = pool.find((q) => CARDS[q.id].dyn === dyn);
-  if (c) ev.push({ k: 'text', s: text(CARDS[c.id].name.toUpperCase()) });
+  if (c) ev.push({ k: 'text', s: text(CARDS[c.id].name.toUpperCase()) }, { k: 'float', who: 'p', s: `${CARDS[c.id].name.toUpperCase()} ↑` });
 }
 
 function finishCard(s: BattleState, card: CardInst, ev: BattleEv[]) {
@@ -409,24 +412,24 @@ function runFx(s: BattleState, fx: Effect<number>[], card: CardInst, targetUid: 
       case 'plate':
         s.player.plate += e.v;
         if (e.keep) s.player.keep += e.v;
-        ev.push({ k: 'plate', who: 'p' }, { k: 'text', s: `Plating ${s.player.plate}.` });
+        ev.push({ k: 'plate', who: 'p', n: e.v }, { k: 'text', s: `Plating ${s.player.plate}.` });
         break;
       case 'heal': healPlayer(s, e.v, ev); break;
       case 'draw': drawCards(s, e.v, rng); ev.push({ k: 'text', s: `You draw ${e.v}.` }); break;
       case 'energy': s.energy += e.v; ev.push({ k: 'text', s: `+${e.v} energy.` }); break;
       case 'weak': {
         const f = target();
-        if (f) { f.weak += e.v; ev.push({ k: 'status', who: f.uid }, { k: 'text', s: `${NAME(f)} is Weak.` }); }
+        if (f) { f.weak += e.v; ev.push({ k: 'status', who: f.uid, s: `WEAK ${e.v}` }, { k: 'text', s: `${NAME(f)} is Weak.` }); }
         break;
       }
       case 'expose': {
         const f = target();
-        if (f) { f.expose += e.v; ev.push({ k: 'status', who: f.uid }, { k: 'text', s: `${NAME(f)} is Exposed.` }); }
+        if (f) { f.expose += e.v; ev.push({ k: 'status', who: f.uid, s: `EXPOSED ${e.v}` }, { k: 'text', s: `${NAME(f)} is Exposed.` }); }
         break;
       }
       case 'tag': {
         const f = target();
-        if (f) { f.tag += e.v; ev.push({ k: 'status', who: f.uid }, { k: 'text', s: `${NAME(f)} is tagged.` }); }
+        if (f) { f.tag += e.v; ev.push({ k: 'status', who: f.uid, s: 'TAGGED' }, { k: 'text', s: `${NAME(f)} is tagged.` }); }
         break;
       }
       case 'triage': s.triage += e.v; break;
@@ -447,7 +450,7 @@ function runFx(s: BattleState, fx: Effect<number>[], card: CardInst, targetUid: 
       case 'rot': {
         const victims = e.aoe ? aliveFoes(s) : [target()].filter(Boolean) as Foe[];
         if (e.v <= 0) break;
-        for (const f of victims) { f.rot = (f.rot ?? 0) + e.v; ev.push({ k: 'status', who: f.uid }); }
+        for (const f of victims) { f.rot = (f.rot ?? 0) + e.v; ev.push({ k: 'status', who: f.uid, s: `ROT +${e.v}` }); }
         ev.push({ k: 'text', s: e.aoe ? `Rot spreads through them. +${e.v}.` : `${NAME(victims[0])} starts to rot. +${e.v}.` });
         break;
       }
@@ -457,7 +460,7 @@ function runFx(s: BattleState, fx: Effect<number>[], card: CardInst, targetUid: 
         else ev.push({ k: 'text', s: 'Nothing is rotting. Nothing to feed on.' });
         break;
       }
-      case 'empower': s.empower += e.v; ev.push({ k: 'text', s: `Next card +${e.v}.` }); break;
+      case 'empower': s.empower += e.v; ev.push({ k: 'text', s: `Next card +${e.v}.` }, { k: 'float', who: 'p', s: `NEXT +${e.v}` }); break;
       case 'healPerTagged': {
         const n = aliveFoes(s).filter((f) => f.tag > 0).length;
         if (n) healPlayer(s, e.v * n, ev);
@@ -506,7 +509,7 @@ function hitFoe(s: BattleState, f: Foe, raw: number, ev: BattleEv[]): number {
 function wake(f: Foe, ev: BattleEv[], how: string) {
   f.asleep = false;
   f.intentIdx = 0;
-  ev.push({ k: 'status', who: f.uid }, { k: 'text', s: `${NAME(f)} ${how}!` });
+  ev.push({ k: 'status', who: f.uid, s: 'AWAKE' }, { k: 'text', s: `${NAME(f)} ${how}!` });
 }
 
 /** The Incinerator's last act: a blast that ignores plating, and it's gone. */
@@ -515,7 +518,7 @@ function explode(s: BattleState, f: Foe, ev: BattleEv[]) {
   let d = def.countdown!.blast + 2 * f.tier;
   if (f.weak > 0) d = Math.floor(d * 0.75);
   if (s.player.expose > 0) d = Math.floor(d * 1.5);
-  ev.push({ k: 'act', uid: f.uid }, { k: 'text', s: `${NAME(f)} goes critical!` }, { k: 'strike', uid: f.uid, hits: 1 });
+  ev.push({ k: 'act', uid: f.uid, label: 'CRITICAL' }, { k: 'text', s: `${NAME(f)} goes critical!` }, { k: 'strike', uid: f.uid, hits: 1 });
   const lost = hpLost(s.player.hp, d);
   s.player.hp -= d;
   s.lostHp = true;
@@ -539,7 +542,7 @@ function killFoe(s: BattleState, f: Foe, ev: BattleEv[]) {
   const burst = ENEMIES[f.id].deathRot;
   if (burst) {
     s.player.rot = (s.player.rot ?? 0) + burst;
-    ev.push({ k: 'status', who: 'p' }, { k: 'text', s: `It bursts in a cloud of spores. Rot +${burst}.` });
+    ev.push({ k: 'status', who: 'p', s: `ROT +${burst}` }, { k: 'text', s: `It bursts in a cloud of spores. Rot +${burst}.` });
   }
   if (ENEMIES[f.id].splits && !f.split) {
     for (let i = 0; i < 2 && aliveFoes(s).length < 4; i++) {
@@ -624,7 +627,7 @@ function startPlayerTurn(s: BattleState, rng: Rng, ev: BattleEv[], drawPenalty =
     if (CARDS[c.id].dyn !== 'unscarred') continue;
     const before = c.bonus ?? 0;
     c.bonus = s.lostHp ? 0 : before + 2;
-    if (c.bonus > before) ev.push({ k: 'text', s: `${CARDS[c.id].name.toUpperCase()} stays clean: +2 damage (now +${c.bonus}).` });
+    if (c.bonus > before) ev.push({ k: 'text', s: `${CARDS[c.id].name.toUpperCase()} stays clean: +2 damage (now +${c.bonus}).` }, { k: 'float', who: 'p', s: `${CARDS[c.id].name.toUpperCase()} +${c.bonus}` });
     else if (before > 0) ev.push({ k: 'text', s: `${CARDS[c.id].name.toUpperCase()} is scarred. Its bonus is gone.` });
   }
   s.lostHp = false;
@@ -744,10 +747,10 @@ function enemyTurn(s: BattleState, rng: Rng, ev: BattleEv[]) {
     }
     const n = intentNumbers(s, f);
     const it = currentIntent(f, s);
-    ev.push({ k: 'act', uid: f.uid }, { k: 'text', s: `${NAME(f)} uses ${n.label.toUpperCase()}!` });
+    ev.push({ k: 'act', uid: f.uid, label: n.label.toUpperCase() }, { k: 'text', s: `${NAME(f)} uses ${n.label.toUpperCase()}!` });
     if (it.line) ev.push({ k: 'text', s: it.line });
-    if (n.plate) { f.plate += n.plate; ev.push({ k: 'plate', who: f.uid }); }
-    if (n.strength) { f.strength += n.strength; ev.push({ k: 'text', s: `${NAME(f)} grows stronger.` }); }
+    if (n.plate) { f.plate += n.plate; ev.push({ k: 'plate', who: f.uid, n: n.plate }); }
+    if (n.strength) { f.strength += n.strength; ev.push({ k: 'float', who: f.uid, s: `STRENGTH +${n.strength}` }, { k: 'text', s: `${NAME(f)} grows stronger.` }); }
     if (it.allyStrength) {
       for (const o of aliveFoes(s)) if (o !== f) o.strength += it.allyStrength;
       ev.push({ k: 'text', s: 'The others grow stronger.' });
@@ -760,9 +763,9 @@ function enemyTurn(s: BattleState, rng: Rng, ev: BattleEv[]) {
         ev.push({ k: 'healFoe', uid: hurt.uid, n: got }, { k: 'text', s: `${NAME(hurt)} is patched up. +${got}.` });
       } else ev.push({ k: 'text', s: 'Nothing to patch up.' });
     }
-    if (n.weak) { s.player.weak += n.weak; ev.push({ k: 'status', who: 'p' }, { k: 'text', s: 'You are Weak.' }); }
-    if (n.expose) { s.player.expose += n.expose; ev.push({ k: 'status', who: 'p' }, { k: 'text', s: 'You are Exposed.' }); }
-    if (n.rot) { s.player.rot = (s.player.rot ?? 0) + n.rot; ev.push({ k: 'status', who: 'p' }, { k: 'text', s: `Rot takes hold. +${n.rot}.` }); }
+    if (n.weak) { s.player.weak += n.weak; ev.push({ k: 'status', who: 'p', s: `WEAK ${n.weak}` }, { k: 'text', s: 'You are Weak.' }); }
+    if (n.expose) { s.player.expose += n.expose; ev.push({ k: 'status', who: 'p', s: `EXPOSED ${n.expose}` }, { k: 'text', s: 'You are Exposed.' }); }
+    if (n.rot) { s.player.rot = (s.player.rot ?? 0) + n.rot; ev.push({ k: 'status', who: 'p', s: `ROT +${n.rot}` }, { k: 'text', s: `Rot takes hold. +${n.rot}.` }); }
     if (n.summon && aliveFoes(s).length < 3) {
       const nf = makeFoe(n.summon, f.tier, s.nextUid++, 1);
       nf.split = true;
@@ -788,7 +791,7 @@ function enemyTurn(s: BattleState, rng: Rng, ev: BattleEv[]) {
           for (const c of s.hand) {
             if (CARDS[c.id].dyn !== 'scartissue') continue;
             s.surge.mgt += 1;
-            ev.push({ k: 'text', s: `${CARDS[c.id].name.toUpperCase()} learns from it: Might +1 this fight.` });
+            ev.push({ k: 'text', s: `${CARDS[c.id].name.toUpperCase()} learns from it: Might +1 this fight.` }, { k: 'float', who: 'p', s: 'MIGHT +1' });
           }
         }
         if (n.drain && lostNow > 0 && f.hp < f.maxHp) {

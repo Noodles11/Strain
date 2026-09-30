@@ -63,6 +63,18 @@ Bot sim, two landings (rushes each boss, 20 seeds):
   face away). Your steps still move them too, as before.
 - On screen they glide between tiles with a small hop, and turn to face the way they walk.
 
+## Battle controls and feedback
+
+- **Drag to attack:** drag a card up out of the hand and drop it on an enemy (its plate at the top or its body in the scene)
+  to play it at that enemy. While you hover, the enemy's plate lights up amber and a pulsing ring appears under it; the card
+  follows your finger and gets an amber border when it is over a target. Dropping it anywhere else over the scene plays it at
+  the current target; dropping it back on the hand cancels. Tapping still plays, swiping down still discards.
+- **Pop-up lettering** (comic, ink-outlined, rising and fading in about a second) replaces the battle log box, which is hidden:
+  damage taken or dealt (`-6`, or `BLOCKED` when plating soaks it all), healing (`+5`), plating gained (`+5 PLATE`),
+  statuses as they land (`EXPOSED 1`, `WEAK 1`, `TAGGED`, `ROT +2`, `AWAKE`), enemy moves by name as they act
+  (`SWEEP`, `CRITICAL`), `STRENGTH +2`, growing cards (`FEEDING BLADE ↑`, `MIGHT +1`), `FIRST STRIKE`, `AMBUSH!`, and why a card
+  can't be played (`NOT ENOUGH ENERGY`). The box only comes back to ask you to pick a card for Donor Cell or Cannibal Print.
+
 ## Hand, discard and loot (rules change)
 
 - **Hands carry over:** cards you don't play stay in hand. At the start of each turn the hand is topped back up to hand

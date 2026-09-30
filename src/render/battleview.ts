@@ -33,6 +33,16 @@ export class BattleView {
   private me: Anchor = { x: 0, y: 0, h: 1 };
   /** Where the clone's attacks leave from: its right shoulder. */
   private hand: Anchor = { x: 0, y: 0, h: 1 };
+  /** The enemy a dragged card is hovering over, highlighted. */
+  dropTarget = -1;
+  /** Short words and numbers that pop over a fighter and fade: damage, plating, statuses. */
+  private floats: { who: 'p' | number; text: string; color: string; t0: number; big: boolean; slot: number }[] = [];
+
+  /** Pop a word or number over the clone ('p') or an enemy; it rises and fades. */
+  float(who: 'p' | number, text: string, color: string, big = false) {
+    const live = this.floats.filter((f) => f.who === who && this.now - f.t0 < 0.5).length;
+    this.floats.push({ who, text, color, t0: this.now, big, slot: live });
+  }
 
   reset() {
     this.foes.clear();
@@ -40,6 +50,8 @@ export class BattleView {
     this.shake = 0;
     this.intro = 0;
     this.target = -1;
+    this.dropTarget = -1;
+    this.floats = [];
     this.cam = 0;
     this.fx.clear();
   }
@@ -157,8 +169,26 @@ export class BattleView {
       const h0 = size * u;
       ctx.save();
       ctx.globalAlpha = show;
+      if (f.uid === this.dropTarget && f.alive) {
+        // the drop target: a pulsing amber ring on the floor and a halo behind it
+        const pulse = 0.75 + 0.25 * Math.sin(t * 10);
+        ctx.save();
+        ctx.strokeStyle = `rgba(227,163,59,${pulse})`;
+        ctx.lineWidth = Math.max(2, u * 0.035);
+        ctx.beginPath();
+        ctx.ellipse(x, y, u * 0.7, u * 0.18, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        const g = ctx.createRadialGradient(x, y - h0 * 0.5, 0, x, y - h0 * 0.5, h0 * 0.9);
+        g.addColorStop(0, `rgba(227,163,59,${0.3 * pulse})`);
+        g.addColorStop(1, 'rgba(227,163,59,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.ellipse(x, y - h0 * 0.5, h0 * 0.9, h0 * 0.9, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
       this.shadow(ctx, x, y, u * 0.55, a.dead);
-      if (f.alive) this.anchors.set(f.uid, { x: x - a.lunge * W * 0.06, y: y - h0 * 0.5, h: Math.max(h0, H * 0.18) });
+      this.anchors.set(f.uid, { x: x - a.lunge * W * 0.06, y: y - h0 * 0.5, h: Math.max(h0, H * 0.18) });
       const blink = a.flash > 0 && Math.floor(a.flash * 12) % 2 === 0;
       if (a.dead > 0) ctx.globalAlpha = show * (1 - a.dead);
       if (!blink) {
@@ -209,7 +239,35 @@ export class BattleView {
       this.lighting.apply(ctx, W, H, lights, { dark: eer.dark * k2, tint: eer.tint, dots: 0.3 * k2, glow: 0.45 * k2 });
     }
     this.fx.draw(ctx, t);
+    this.drawFloats(ctx, W);
     ctx.restore();
+  }
+
+  /** Comic pop-up lettering: fat, ink-outlined, rising and fading over about a second. */
+  private drawFloats(ctx: CanvasRenderingContext2D, W: number) {
+    const life = 1.15;
+    this.floats = this.floats.filter((f) => this.now - f.t0 < life);
+    for (const f of this.floats) {
+      const a = f.who === 'p' ? this.me : this.anchors.get(f.who);
+      if (!a) continue;
+      const k = (this.now - f.t0) / life;
+      const pop = k < 0.12 ? 0.6 + (k / 0.12) * 0.55 : k < 0.2 ? 1.15 - ((k - 0.12) / 0.08) * 0.15 : 1;
+      const size = Math.round((f.big ? 0.085 : 0.06) * W * pop);
+      const x = a.x + (f.slot % 2 ? 1 : -1) * Math.min(f.slot, 3) * W * 0.05;
+      const y = a.y - a.h * 0.55 - k * W * 0.12 - f.slot * size * 0.9;
+      ctx.save();
+      ctx.globalAlpha = k > 0.65 ? 1 - (k - 0.65) / 0.35 : 1;
+      ctx.font = `700 ${size}px "Bebas Neue", "Barlow Condensed", sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = Math.max(3, size * 0.18);
+      ctx.strokeStyle = '#0b0c0e';
+      ctx.strokeText(f.text, x, y);
+      ctx.fillStyle = f.color;
+      ctx.fillText(f.text, x, y);
+      ctx.restore();
+    }
   }
 
   private scratch: HTMLCanvasElement | null = null;

@@ -265,3 +265,9 @@ sup { font-size: 10px; }
 .sheet.summary .corpse .bio { font-family: var(--mono); color: #9fd08a; }
 .sheet.summary .corpse small { color: var(--dim); font-weight: 400; text-transform: none; }
 .sheet.summary .cards3 { margin-bottom: 8px; }
+
+/* dragging a card onto an enemy */
+.drag-ghost { position: fixed; z-index: 50; pointer-events: none; transform: translate(-50%, -60%) rotate(-4deg) scale(1.08);
+  box-shadow: 0 10px 24px rgba(0,0,0,0.6); transition: box-shadow 0.1s, border-color 0.1s; }
+.drag-ghost.on-target { border-color: var(--sodium); box-shadow: 0 0 0 3px var(--sodium), 0 10px 24px rgba(0,0,0,0.6); }
+.plates .unit.drop .plate { border-color: var(--sodium); box-shadow: 0 0 0 2px var(--sodium), 0 0 18px rgba(227,163,59,0.55); }
