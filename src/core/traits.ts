@@ -6,11 +6,11 @@ export const TRAITS: Trait[] = ['mgt', 'hde', 'rfx', 'foc', 'met', 'abr'];
 export type Traits = Record<Trait, number>;
 
 export const TRAIT_INFO: Record<Trait, { name: string; short: string; glyph: string; domain: string; battle: string; explore: string }> = {
-  mgt: { name: 'Might', short: 'MGT', glyph: '✊', domain: 'Physical', battle: 'Strike damage', explore: 'Cut debris, force gates' },
-  hde: { name: 'Hide', short: 'HDE', glyph: '⬢', domain: 'Physical', battle: 'Plating, max integrity', explore: 'Resist hazards' },
+  mgt: { name: 'Might', short: 'MGT', glyph: '✊', domain: 'Physical', battle: 'Strike damage', explore: 'Clear debris, pry caches, burn nests' },
+  hde: { name: 'Hide', short: 'HDE', glyph: '⬢', domain: 'Physical', battle: 'Plating, max integrity', explore: 'Resist hazards, less hurt forcing things' },
   rfx: { name: 'Reflex', short: 'RFX', glyph: '⚡', domain: 'Neural', battle: 'Initiative, multi-hit, hand size', explore: 'Sneak, flee, stay unseen' },
-  foc: { name: 'Focus', short: 'FOC', glyph: '◎', domain: 'Neural', battle: 'Debuffs, draw, energy', explore: 'Open locks, scan, spot ambushes' },
-  met: { name: 'Metabolism', short: 'MET', glyph: '✚', domain: 'Visceral', battle: 'Healing, biomass', explore: 'Oxygen, resting' },
+  foc: { name: 'Focus', short: 'FOC', glyph: '◎', domain: 'Neural', battle: 'Debuffs, draw, energy', explore: 'Open locks, spot caches and ambushes' },
+  met: { name: 'Metabolism', short: 'MET', glyph: '✚', domain: 'Visceral', battle: 'Healing, biomass', explore: 'Mending with biomass, resting' },
   abr: { name: 'Aberrance', short: 'ABR', glyph: '⟁', domain: 'Visceral', battle: 'Drain, wrong cards', explore: 'Strange things' },
 };
 

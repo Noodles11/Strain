@@ -1,5 +1,4 @@
 import { aliveFoes, canFlee, cardBonus, currentIntent, fleeChance, intentNumbers, playable, resolved, type BattleEv } from '../core/battle';
-import { CARDS } from '../core/cards';
 import { ENEMIES } from '../core/enemies';
 import { LOGS } from '../core/events';
 import { IMPLANTS } from '../core/implants';
@@ -7,12 +6,12 @@ import { planetDepth, PLANETS } from '../core/planets';
 import { foeInfo, playerInfo } from './unitinfo';
 import { canRaise, loadMeta, markLanded, newMeta, raise, RUN_KEY, saveMeta, settleRun, type Meta } from '../core/meta';
 import {
-  actionsAt, bDiscard, bEnd, bFlee, bPick, bPlay, canExcise, chartOptions, goHome, here, land, describeAt, doAction, excise, exciseCost, expCard, expUsable, isInteractable, isSelfCard, migrateRun,
-  lootTake, maxHp, mobsTick, mobAt, newRun, pathTo, playExp, rewardPick, runTraits, step, stormIn,
+  actionsAt, bDiscard, bEnd, bFlee, bPick, bPlay, canExcise, chartOptions, goHome, here, land, describeAt, doAction, excise, exciseCost, isInteractable, migrateRun,
+  lootTake, maxHp, mend, mendRate, mobsTick, mobAt, newRun, pathTo, rewardPick, runTraits, step, stormIn,
   takeEvents, travel, travelPoints, type RunState,
 } from '../core/run';
 import {
-  energyPerTurn, exploreHandSize, handSize, maxIntegrity, maxOxygen, SEQUENCE_CAP, sequenceCost, TRAIT_INFO, TRAITS,
+  energyPerTurn, handSize, maxIntegrity, SEQUENCE_CAP, sequenceCost, TRAIT_INFO, TRAITS,
   type Trait,
 } from '../core/traits';
 import { BattleView } from '../render/battleview';
@@ -190,7 +189,7 @@ export class App {
       <div class="traits">${rows}</div>
       <div class="derived">
         <span class="chip">Integrity ${maxIntegrity(t)}</span><span class="chip">Energy ${energyPerTurn(t)}</span>
-        <span class="chip">Hand ${handSize(t)}</span><span class="chip">O₂ ${maxOxygen(t)}</span><span class="chip">Survey hand ${exploreHandSize(t)}</span>
+        <span class="chip">Hand ${handSize(t)}</span>
       </div>
       ${hasRun
         ? `<div class="row"><button class="btn primary" data-go="continue">Continue ${cloneName(this.run!.clone)}</button></div>
@@ -291,8 +290,9 @@ export class App {
         <div class="overlay"></div>`;
     } else {
       this.root.innerHTML = `<div class="scene full"><canvas class="c2"></canvas>
-        <div class="hud"></div><div class="dock"><div class="exp-hand"></div><div class="dock-btns">
-        <button class="btn small" data-d="map">Map</button><button class="btn small" data-d="deck">Deck</button><button class="btn small" data-d="menu">Menu</button></div></div></div>
+        <div class="hud"></div>
+        <canvas class="mini" data-d="map" title="Map"></canvas>
+        <button class="pause-btn" data-d="menu" aria-label="Pause"><i></i><i></i></button></div>
         <div class="overlay"></div>`;
     }
     this.scene = this.root.querySelector('.scene')!;
@@ -351,7 +351,7 @@ export class App {
       if (this.layout === 'explore') this.tapWorld(px, py);
       else this.tapBattle(px, py);
     });
-    this.root.querySelectorAll<HTMLButtonElement>('[data-d]').forEach((b) => b.addEventListener('click', () => {
+    this.root.querySelectorAll<HTMLElement>('[data-d]').forEach((b) => b.addEventListener('click', () => {
       const d = b.dataset.d;
       this.walk = null;
       this.sheet = d === 'map' ? { kind: 'map' } : d === 'deck' ? { kind: 'deck', tab: 'tac' } : { kind: 'menu' };
@@ -807,7 +807,6 @@ export class App {
     const r = this.run!;
     const t = runTraits(r);
     const mh = maxHp(r);
-    const mo = maxOxygen(t);
     const storm = stormIn(r);
     const hud = this.root.querySelector('.hud');
     if (!hud) return;
@@ -815,39 +814,22 @@ export class App {
     this.lastMsgCount = r.msgs.length;
     const msg = r.msgs[r.msgs.length - 1] ?? '';
     hud.innerHTML = `<div class="hud-row"><span class="stat">${esc(here(r).name.replace('The ', '').toUpperCase())} ${r.landing}</span>${this.bar(r.hp, mh, 16)}<span class="stat">${Math.max(0, r.hp)}/${mh}</span></div>
-      <div class="hud-row"><span class="stat" style="color:var(--foc)">O₂</span><span class="pips">${Array.from({ length: mo }, (_, i) => `<b class="${i < r.oxygen ? 'on' : ''}"></b>`).join('')}</span>
-      <span class="chip">◆ ${r.biomass} bio</span><span class="chip" style="color:var(--sodium)">${r.codons} cod</span>
-      ${r.storm ? '<span class="chip warn">STORM</span>' : storm < 200 ? `<span class="chip warn">storm ${storm}</span>` : ''}
-      ${r.sealSteps ? `<span class="chip">seal ${r.sealSteps}</span>` : ''}${r.stalk ? '<span class="chip">stalking</span>' : ''}</div>
+      <div class="hud-row"><span class="chip">◆ ${r.biomass} bio</span><span class="chip" style="color:var(--sodium)">${r.codons} cod</span>
+      ${r.storm ? '<span class="chip warn">STORM</span>' : storm < 200 ? `<span class="chip warn">storm ${storm}</span>` : ''}</div>
       ${msg ? `<div class="msg ${newMsg ? '' : 'fade'}">${esc(msg)}</div>` : ''}`;
+    // the minimap rides under the HP bar at the right edge; tapping it opens the full map
+    const mini = this.root.querySelector<HTMLCanvasElement>('canvas.mini');
+    if (mini) {
+      const row = hud.querySelector('.hud-row')?.getBoundingClientRect();
+      const sc = this.root.querySelector('.scene')?.getBoundingClientRect();
+      if (row && sc) mini.style.top = `${row.bottom - sc.top + 8}px`;
+      this.drawMinimap(mini, r, 13);
+    }
     if (newMsg) {
       clearTimeout(this.msgTimer);
       this.msgTimer = window.setTimeout(() => this.root.querySelector('.msg')?.classList.add('fade'), 3200);
     }
-    const handEl = this.root.querySelector('.exp-hand')!;
-    handEl.innerHTML = r.expHand.map((u) => {
-      const c = expCard(r, u)!;
-      const ok = expUsable(r, u).ok;
-      return `<div data-u="${u}">${cardHtml(c.id, t, { off: !ok })}</div>`;
-    }).join('');
-    handEl.querySelectorAll<HTMLElement>('[data-u]').forEach((el) => {
-      const u = Number(el.dataset.u);
-      press(el, () => this.tapExp(u));
-    });
-  }
-
-  private tapExp(uid: number) {
-    const r = this.run!;
-    const c = expCard(r, uid);
-    if (!c || this.sheet) return;
-    if (!isSelfCard(c.id)) {
-      r.msgs.push(`${CARDS[c.id].name}: walk up to a ${CARDS[c.id].act === 'pry' ? 'cache' : CARDS[c.id].act === 'cut' ? 'pile of debris or a nest' : 'sealed door'} and tap it.`);
-      this.refresh();
-      return;
-    }
-    if (!expUsable(r, uid).ok) return;
-    playExp(r, uid);
-    this.afterAction();
+    void t;
   }
 
   private refreshBattle() {
@@ -955,7 +937,7 @@ export class App {
     if (piles) piles.textContent = `draw ${b.draw.length} · disc ${b.discard.length} · swipe ↓ to discard`;
     const fleeB = this.root.querySelector<HTMLButtonElement>('[data-b="flee"]');
     if (fleeB) {
-      fleeB.disabled = !quiet || !canFlee(b) || r.oxygen < 2;
+      fleeB.disabled = !quiet || !canFlee(b);
       fleeB.textContent = canFlee(b) ? `Flee ${Math.round(fleeChance(b) * 100)}%` : 'Flee';
     }
     const endB = this.root.querySelector<HTMLButtonElement>('[data-b="end"]');
@@ -994,7 +976,7 @@ export class App {
           <div class="row"><span class="chip">${tag}</span>${o.state === 'open' ? `<button class="btn primary small" data-land="${o.id}">Set course</button>` : ''}</div></div>`;
       }).join('');
       html = `<div class="screen"><h1 class="title">STAR CHART<small>${esc(here(r).name)} cleared · ${r.codons} Codons so far</small></h1>
-        <p class="sub">Each landing is one tier harder, whichever world you pick. The ship refuels: full oxygen, +30% integrity.</p>
+        <p class="sub">Each landing is one tier harder, whichever world you pick. The ship patches you up: +30% integrity.</p>
         ${rows}<button class="btn" data-o="home">Go home now and bank everything</button></div>`;
     } else if (quiet && r.mode === 'loot' && r.reward) {
       // the after-fight summary: what the fight paid, and maybe a card
@@ -1072,6 +1054,11 @@ export class App {
       this.layout = '';
       this.syncLayout();
     }));
+    o.querySelectorAll<HTMLElement>('[data-d]').forEach((b) => b.addEventListener('click', () => {
+      const d = b.dataset.d;
+      this.sheet = d === 'map' ? { kind: 'map' } : d === 'deck' ? { kind: 'deck', tab: 'tac' } : { kind: 'menu' };
+      this.refresh();
+    }));
     o.querySelectorAll<HTMLElement>('[data-tab]').forEach((b) => b.addEventListener('click', () => {
       const tab = b.dataset.tab as 'tac' | 'exp';
       this.sheet = this.sheet?.kind === 'surgery' ? { kind: 'surgery', tab } : { kind: 'deck', tab };
@@ -1091,6 +1078,7 @@ export class App {
         this.layout = '';
         this.syncLayout();
       } else if (k === 'suspend') { this.saveRun(); this.showHub(); }
+      else if (k === 'mend10' || k === 'mendfull') { mend(r, k === 'mend10' ? 10 : 'full'); this.saveRun(); this.refresh(); }
       else if (k === 'abandon') { if (confirm('Abandon this clone? Codons earned so far are banked.')) this.endRun('dead'); }
     }));
     o.querySelectorAll<HTMLElement>('.sheet-wrap').forEach((w) => w.addEventListener('click', (e) => {
@@ -1124,25 +1112,40 @@ export class App {
         return wrap(`<h2>${esc(here(r).name)} · map</h2><canvas class="minimap"></canvas><p>Fast travel (not while hunted):</p><div class="row">${pts}</div>`);
       }
       case 'deck': {
-        const list = s.tab === 'tac' ? r.tac : r.exp;
-        return wrap(`<h2>Deck</h2><div class="tabs"><button class="btn small ${s.tab === 'tac' ? 'on' : ''}" data-tab="tac">Tactical ${r.tac.length}</button>
-          <button class="btn small ${s.tab === 'exp' ? 'on' : ''}" data-tab="exp">Exploration ${r.exp.length}</button></div>
+        const list = r.tac;
+        return wrap(`<h2>Deck · ${r.tac.length} cards</h2>
           <p>Every number reads your traits: ${TRAITS.map((k) => `<b class="${k}">${TRAIT_INFO[k].short} ${t[k]}${r.somatic[k] ? `<sup>+${r.somatic[k]}</sup>` : ''}</b>`).join(' ')}</p>
           ${this.implantList(r)}
           <div class="grid">${list.map((c) => cardHtml(c.id, t)).join('')}</div>`);
       }
       case 'surgery': {
-        const list = s.tab === 'tac' ? r.tac : r.exp;
-        return wrap(`<h2>Surgery bay</h2><p>Tap a card to cut it out for ${exciseCost(r)} biomass (◆ ${r.biomass}). Decks keep at least ${s.tab === 'tac' ? 5 : 3} cards.</p>
-          <div class="tabs"><button class="btn small ${s.tab === 'tac' ? 'on' : ''}" data-tab="tac">Tactical ${r.tac.length}</button>
-          <button class="btn small ${s.tab === 'exp' ? 'on' : ''}" data-tab="exp">Exploration ${r.exp.length}</button></div>
-          <div class="grid">${list.map((c) => `<div data-cut="${c.uid}" class="${canExcise(r, s.tab, c.uid) ? '' : 'nobuy'}">${cardHtml(c.id, t, { off: !canExcise(r, s.tab, c.uid) })}</div>`).join('')}</div>`);
+        const list = r.tac;
+        return wrap(`<h2>Surgery bay</h2><p>Tap a card to cut it out for ${exciseCost(r)} biomass (◆ ${r.biomass}). The deck keeps at least 5 cards.</p>
+          <div class="grid">${list.map((c) => `<div data-cut="${c.uid}" class="${canExcise(r, 'tac', c.uid) ? '' : 'nobuy'}">${cardHtml(c.id, t, { off: !canExcise(r, 'tac', c.uid) })}</div>`).join('')}</div>`);
       }
-      case 'menu':
-        return wrap(`<h2>${cloneName(r.clone)}</h2><p>Steps ${r.steps} · fights ${r.stats.fights} · kills ${r.stats.kills} · ambushed ${r.stats.ambushed}</p>${this.implantList(r)}
+      case 'menu': {
+        // the pause menu doubles as the clone's profile: health and mending, deck, map, genome, implants, options
+        const mh = maxHp(r);
+        const missing = mh - r.hp;
+        const rate = mendRate(r);
+        const small = Math.min(10, missing);
+        const mendBtns = missing > 0
+          ? `<button class="btn act" data-o="mend10" ${r.biomass >= 1 ? '' : 'disabled'}>Mend ${small} <small>${Math.ceil(small / rate)} biomass</small></button>
+             ${missing > 10 ? `<button class="btn act" data-o="mendfull" ${r.biomass >= 1 ? '' : 'disabled'}>Mend fully (${missing}) <small>${Math.ceil(missing / rate)} biomass${r.biomass * rate < missing ? ' · as far as it goes' : ''}</small></button>` : ''}`
+          : '<p class="why">Whole. Nothing to mend.</p>';
+        const genome = TRAITS.map((k) => `<div class="gene t-${k}"><b>${TRAIT_INFO[k].glyph}</b><span>${TRAIT_INFO[k].name}</span><em>${t[k]}</em><small>${r.seq[k]} seq${r.somatic[k] ? ` · +${r.somatic[k]} spliced` : ''}</small></div>`).join('');
+        return wrap(`<h2>Paused · ${cloneName(r.clone)}</h2>
+          <div class="pause-hp">${this.bar(r.hp, mh)}<span>${Math.max(0, r.hp)}/${mh} integrity</span></div>
+          <p class="why">◆ ${r.biomass} biomass · ${r.codons} Codons this run · mending ${rate} integrity per biomass</p>
+          <div class="acts">${mendBtns}</div>
+          <div class="row pause-nav"><button class="btn" data-d="deck">Deck (${r.tac.length})</button><button class="btn" data-d="map">Map</button></div>
+          <h3>Genome</h3><div class="genes">${genome}</div>
+          <h3>Implants</h3>${this.implantList(r)}
+          <p class="why">Steps ${r.steps} · fights ${r.stats.fights} · kills ${r.stats.kills} · ambushed ${r.stats.ambushed}</p>
           <div class="acts"><button class="btn" data-o="print">Print effect: ${this.printOn ? 'on' : 'off'}</button>
           <button class="btn" data-o="suspend">Back to the Printer (keep this run)</button>
           <button class="btn danger" data-o="abandon">Abandon this clone</button></div>`);
+      }
     }
   }
 
@@ -1151,14 +1154,16 @@ export class App {
     return `<div class="implants">${r.implants.map((id) => `<div class="imp"><b>${IMPLANTS[id].glyph}</b> <span><b>${esc(IMPLANTS[id].name)}</b> · ${esc(IMPLANTS[id].text)}</span></div>`).join('')}</div>`;
   }
 
-  private drawMinimap(c: HTMLCanvasElement, r: RunState) {
+  /** The map in miniature: the whole map, or with `crop` a window that many tiles across around the clone. */
+  private drawMinimap(c: HTMLCanvasElement, r: RunState, crop = 0) {
     const w = r.world;
-    const s = 6;
-    c.width = w.w * s;
-    c.height = w.h * s;
+    const s = crop ? 5 : 6;
+    c.width = (crop || w.w) * s;
+    c.height = (crop || w.h) * s;
     const ctx = c.getContext('2d')!;
     ctx.fillStyle = INK.void;
     ctx.fillRect(0, 0, c.width, c.height);
+    if (crop) ctx.translate(-(r.x - Math.floor(crop / 2)) * s, -(r.y - Math.floor(crop / 2)) * s);
     for (let y = 0; y < w.h; y++) {
       for (let x = 0; x < w.w; x++) {
         const i = idx(w, x, y);

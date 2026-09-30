@@ -1,5 +1,5 @@
 import {
-  CARDS, hasKeyword, primaryTrait, resolveCard, REWARD_EXP, REWARD_TAC, STARTER_EXP, STARTER_TAC, type DeckKind,
+  CARDS, hasKeyword, primaryTrait, resolveCard, REWARD_TAC, STARTER_TAC, type DeckKind,
 } from './cards';
 import { discardCards,
   botTurn, endTurn, flee, pickHand, playCard, startBattle, type BattleEv, type BattleState, type CardInst,
@@ -11,7 +11,7 @@ import { IMPLANT_POOL, IMPLANTS, implantMods, type ImplantMods } from './implant
 import type { Meta } from './meta';
 import { Rng } from './rng';
 import {
-  addTraits, biomassYield, exploreHandSize, hazardDamage, maxIntegrity, maxOxygen, SEQUENCE_CAP, sequenceCost, SOMATIC_CAP, somaticCost, TRAIT_INFO, TRAITS, traits,
+  addTraits, biomassYield, hazardDamage, maxIntegrity, maxOxygen, SEQUENCE_CAP, sequenceCost, SOMATIC_CAP, somaticCost, TRAIT_INFO, TRAITS, traits,
   type Trait, type Traits,
 } from './traits';
 import {
@@ -152,7 +152,8 @@ export function newRun(meta: Meta, seed: number, start = 'derelict'): RunState {
 function setupRun(meta: Meta, seed: number, world: World): RunState {
   let uid = 1;
   const tac = STARTER_TAC.map((id) => ({ uid: uid++, id }));
-  const exp = STARTER_EXP.map((id) => ({ uid: uid++, id }));
+  // the exploration deck is retired: obstacles are checked against traits instead
+  const exp: CardInst[] = [];
   const r: RunState = {
     v: 1, seed, rng: seed ^ 0x5eed, clone: meta.clone,
     seq: { ...meta.seq }, somatic: traits(0),
@@ -168,9 +169,7 @@ function setupRun(meta: Meta, seed: number, world: World): RunState {
   };
   const t = runTraits(r);
   r.hp = maxHp(r);
-  r.oxygen = maxO2(r);
-  withRng(r, (rng) => { r.expDraw = rng.shuffle(exp.map((c) => c.uid)); });
-  drawExp(r, exploreHandSize(t));
+  void t;
   reveal(r);
   say(r, world.planet === 'derelict'
     ? `CLONE-${String(r.clone).padStart(4, '0')} wakes on the derelict.`
@@ -239,18 +238,6 @@ export function expCard(r: RunState, uid: number): CardInst | undefined {
   return r.exp.find((c) => c.uid === uid);
 }
 
-function drawExp(r: RunState, upTo: number) {
-  withRng(r, (rng) => {
-    while (r.expHand.length < upTo) {
-      if (!r.expDraw.length) {
-        if (!r.expDiscard.length) return;
-        r.expDraw = rng.shuffle(r.expDiscard);
-        r.expDiscard = [];
-      }
-      r.expHand.push(r.expDraw.pop()!);
-    }
-  });
-}
 
 function spendExp(r: RunState, uid: number) {
   const c = expCard(r, uid)!;
@@ -469,20 +456,11 @@ export function step(r: RunState, dx: number, dy: number): boolean {
       if (d) { r.hp -= d; say(r, `${here(r).hazardText} −${d}.`); }
     }
   }
-  if (inStorm(r, nx, ny)) {
-    if (r.oxygen > 0) r.oxygen -= 1;
-    else { r.hp -= 2; say(r, 'The storm chokes you. −2.'); }
-  }
+  if (inStorm(r, nx, ny)) { r.hp -= 1; say(r, 'The storm burns. −1.'); }
   if (r.hp <= 0) { die(r, 'You fall and do not get up.'); return true; }
 
-  if (nx === r.world.ship.x && ny === r.world.ship.y) {
-    r.oxygen = maxO2(r);
-    drawExp(r, exploreHandSize(t));
-  }
-  const b = r.beacons.find((q) => q.x === nx && q.y === ny && !q.used);
-  if (b) { b.used = true; r.oxygen = maxO2(r); say(r, 'Beacon: oxygen refilled.'); }
-
   reveal(r);
+  spotCaches(r);
   const zone = zoneAt(r.world, nx, ny).id;
   if (!r.zonesVisited.includes(zone)) {
     r.zonesVisited.push(zone);
@@ -718,8 +696,7 @@ export function bDiscard(r: RunState, uid: number): BattleEv[] {
 }
 
 export function bFlee(r: RunState): BattleEv[] {
-  if (!r.battle || r.oxygen < 2) return [];
-  r.oxygen -= 2;
+  if (!r.battle) return [];
   const ev = withRng(r, (rng) => flee(r.battle!, rng));
   afterBattleOp(r);
   return ev;
@@ -753,7 +730,7 @@ function afterBattleOp(r: RunState) {
     return;
   }
   // won
-  r.oxygen = Math.min(maxO2(r), r.oxygen + 2 + (r.hp > maxHp(r) / 2 ? mods(r).winO2 : 0));
+  if (r.hp > maxHp(r) / 2 && mods(r).winO2) r.hp = Math.min(maxHp(r), r.hp + 2 * mods(r).winO2);
   // runners that got away and units that blew themselves up leave nothing behind
   const killed = b.foes.filter((f) => !f.fled);
   const kills = killed.length;
@@ -832,10 +809,8 @@ export function rewardPick(r: RunState, i: number) {
   if (!rw || r.mode !== 'reward') return;
   const id = rw.options[i];
   if (id) {
-    const inst = { uid: r.nextUid++, id };
-    if (rw.deck === 'tac') r.tac.push(inst);
-    else { r.exp.push(inst); r.expDiscard.push(inst.uid); }
-    say(r, `${CARDS[id].name} joins your ${rw.deck === 'tac' ? 'tactical' : 'exploration'} deck.`);
+    r.tac.push({ uid: r.nextUid++, id });
+    say(r, `${CARDS[id].name} joins your deck.`);
   }
   r.reward = undefined;
   r.mode = 'explore';
@@ -849,7 +824,8 @@ function topTraits(r: RunState): Trait[] {
 /** Three distinct cards; half the slots lean toward your two best traits. Planet cards join the tactical pool. */
 export function offerCards(r: RunState, deck: DeckKind, only?: string[]): string[] {
   const local = here(r).cards;
-  const pool = only ?? (deck === 'tac' ? [...REWARD_TAC, ...local, ...local] : REWARD_EXP);
+  void deck;
+  const pool = only ?? [...REWARD_TAC, ...local, ...local];
   const top = topTraits(r);
   const fav = pool.filter((id) => { const p = primaryTrait(CARDS[id]); return p && top.includes(p); });
   const all = [...new Set(pool)].length;
@@ -880,6 +856,61 @@ function adjacent(r: RunState, x: number, y: number): boolean {
   return Math.abs(x - r.x) + Math.abs(y - r.y) === 1;
 }
 
+export const CACHE_NEED = 5;
+export const NEST_NEED = 7;
+
+export interface Obstacle {
+  trait: Trait;
+  need: number;
+  have: number;
+  /** Clean: no roll, no harm. */
+  free: boolean;
+  /** Brute force: chance to succeed, and the integrity it costs every try. */
+  chance: number;
+  cost: number;
+}
+
+/**
+ * Doors test Focus (rating × 2), debris Might (rating × 2), caches Might 5, nests Might 7.
+ * At or above the need it just works. Below it, brute force always has a chance (40%, −10% per
+ * missing point, never under 15%) and always costs a little integrity (1 + rating, less with Hide).
+ */
+export function obstacleCheck(r: RunState, kind: 'door' | 'debris' | 'cache' | 'nest', rating: number): Obstacle {
+  const t = runTraits(r);
+  const trait: Trait = kind === 'door' ? 'foc' : 'mgt';
+  const need = kind === 'door' || kind === 'debris' ? rating * 2 : kind === 'cache' ? CACHE_NEED : NEST_NEED;
+  const have = t[trait];
+  const miss = Math.max(0, need - have);
+  return {
+    trait, need, have, free: have >= need,
+    chance: Math.max(0.15, Math.min(0.85, 0.4 - 0.1 * (miss - 1))),
+    cost: Math.max(1, 1 + rating - Math.floor(t.hde / 4)),
+  };
+}
+
+/** Hidden caches show themselves when you are right next to one, or within 3 tiles with Focus 6+. */
+function spotCaches(r: RunState) {
+  const reach = runTraits(r).foc >= 6 ? 3 : 1;
+  for (const p of r.world.pois) {
+    if (!p.hidden) continue;
+    if (Math.max(Math.abs(p.x - r.x), Math.abs(p.y - r.y)) <= reach) { p.hidden = false; say(r, 'Something glints behind a panel: a hidden cache.'); }
+  }
+}
+
+/** Heal on the move: biomass into integrity, anywhere, any time outside a fight. */
+export function mend(r: RunState, amount: number | 'full'): boolean {
+  const missing = maxHp(r) - r.hp;
+  if (missing <= 0 || r.mode === 'battle') return false;
+  const want = amount === 'full' ? missing : Math.min(amount, missing);
+  const n = Math.min(want, r.biomass * mendRate(r));
+  if (n <= 0) return false;
+  const cost = Math.ceil(n / mendRate(r));
+  r.biomass -= cost;
+  r.hp += n;
+  say(r, `You knit yourself back together. +${n} integrity, −${cost} biomass.`);
+  return true;
+}
+
 export function forceGateCost(r: RunState, rating: number): number {
   return Math.max(1, 3 * rating - runTraits(r).hde);
 }
@@ -892,16 +923,16 @@ export function describeAt(r: RunState, x: number, y: number): { title: string; 
   const g = gateAt(r.world, x, y);
   if (g && !g.open) {
     return g.kind === 'door'
-      ? { title: `Sealed door · rating ${g.rating}`, text: `Override opens it at Focus ${g.rating * 2}+.${g.forcible ? '' : ' Too heavy to force.'}` }
-      : { title: `Debris · rating ${g.rating}`, text: `Plasma Cutter clears it at Might ${g.rating * 2}+.${g.forcible ? '' : ' Too dense to force.'}` };
+      ? { title: `Sealed door · rating ${g.rating}`, text: `With Focus ${g.rating * 2}+ you open the lock cleanly. Below that you can force it: a chance, and it always hurts a little.` }
+      : { title: `Debris · rating ${g.rating}`, text: `With Might ${g.rating * 2}+ you clear it cleanly. Below that you can force a way through: a chance, and it always hurts a little.` };
   }
   const p = poiAt(r, x, y);
   if (!p) return null;
   switch (p.kind) {
-    case 'cache': return { title: 'Cache', text: 'A sealed locker. Pry it open.' };
-    case 'vent': return { title: p.used ? 'Cold vent (spent)' : 'Warm vent', text: 'Rest: heal, refill oxygen and your exploration hand. Everything you killed elsewhere comes back.' };
-    case 'nest': return { title: 'Nest', text: 'It breathes. Every so often something crawls out.' };
-    case 'ship': return { title: 'Your ship', text: r.bossDead ? 'Ready to launch.' : 'Oxygen and exploration hand refill here.' };
+    case 'cache': return { title: 'Cache', text: `A sealed locker. Might ${CACHE_NEED}+ pries it open cleanly; below that you can rip at it.` };
+    case 'vent': return { title: p.used ? 'Cold vent (spent)' : 'Warm vent', text: 'Rest: heal. Everything you killed elsewhere comes back.' };
+    case 'nest': return { title: 'Nest', text: `It breathes. Every so often something crawls out. Might ${NEST_NEED}+ burns it out; or fight what guards it.` };
+    case 'ship': return { title: 'Your ship', text: r.bossDead ? 'Ready to launch.' : `Kill ${here(r).bossName} to launch.` };
     case 'pod': return { title: 'Splice pod', text: `Pour biomass in to push this body past its sequence. +1 to a trait for this run (max +${SOMATIC_CAP} each). ${SITE_BUYS - (p.buys ?? 0)} splice${SITE_BUYS - (p.buys ?? 0) === 1 ? '' : 's'} left in it.` };
     case 'terminal': return { title: 'Printer terminal', text: `It still prints techniques. ${TERMINAL_PRICE} biomass each, ${SITE_BUYS - (p.buys ?? 0)} left.` };
     case 'vat': return { title: 'Empty vat', text: `A print vat, drained but still wired to the sequencer. Spend Codons, carried first, then banked, to raise a trait for good: this clone and every print after it.` };
@@ -918,38 +949,24 @@ export function actionsAt(r: RunState, x: number, y: number): Action[] {
   const out: Action[] = [];
   const t = runTraits(r);
   const near = adjacent(r, x, y) || (x === r.x && y === r.y);
-  const hand = r.expHand.map((u) => expCard(r, u)!).filter(Boolean);
-  const cardAction = (act: string, label: (p: number) => string, need: number) => {
-    for (const c of hand) {
-      if (CARDS[c.id].act !== act) continue;
-      const res = resolveCard(CARDS[c.id], t);
-      const use = expUsable(r, c.uid);
-      out.push({
-        id: `card:${c.uid}`, label: `${CARDS[c.id].name}`, detail: `${label(res.power)} · ${res.cost} O₂`,
-        ok: near && use.ok && res.power >= need,
-      });
-      return;
-    }
+  // an obstacle: done cleanly if the trait is high enough, else brute force for a chance and a little blood
+  const obstacle = (o: Obstacle, clean: string, force: string) => {
+    const name = TRAIT_INFO[o.trait].name;
+    if (o.free) out.push({ id: 'open', label: clean, detail: `${name} ${o.have} ≥ ${o.need}`, ok: near });
+    else out.push({ id: 'force', label: force, detail: `${Math.round(o.chance * 100)}% · −${o.cost} integrity · ${name} ${o.have}/${o.need}`, ok: near && r.hp > o.cost });
   };
   const g = gateAt(r.world, x, y);
   if (g && !g.open) {
-    cardAction(g.kind === 'door' ? 'override' : 'cut', (p) => `power ${p} vs ${g.rating}`, g.rating);
-    if (g.forcible) {
-      const c = forceGateCost(r, g.rating);
-      out.push({ id: 'force', label: 'Force it', detail: `−${c} integrity`, ok: near && r.hp > c });
-    }
+    obstacle(obstacleCheck(r, g.kind === 'door' ? 'door' : 'debris', g.rating), g.kind === 'door' ? 'Open the lock' : 'Clear it', 'Force it');
     return out;
   }
   const p = poiAt(r, x, y);
   if (!p) return out;
-  if (p.kind === 'cache' && !p.used) {
-    cardAction('pry', () => 'open', 0);
-    const c = forceCacheCost(r);
-    out.push({ id: 'force', label: 'Rip it open', detail: `−${c} integrity`, ok: near && r.hp > c });
-  }
+  if (p.kind === 'cache' && !p.used) obstacle(obstacleCheck(r, 'cache', 1), 'Pry it open', 'Rip at it');
   if (p.kind === 'vent') out.push({ id: 'rest', label: 'Rest', detail: 'Heal, refill. Enemies return.', ok: near && !p.used });
-  if (p.kind === 'nest') {
-    cardAction('cut', (pw) => `burn it (needs 3, have ${pw})`, 3);
+  if (p.kind === 'nest' && !p.used) {
+    const o = obstacleCheck(r, 'nest', 1);
+    if (o.free) out.push({ id: 'open', label: 'Burn it out', detail: `Might ${o.have} ≥ ${o.need}`, ok: near });
     out.push({ id: 'attack', label: 'Attack the nest', detail: `${here(r).nest.length} guardians`, ok: near });
   }
   if (p.kind === 'pod') {
@@ -960,7 +977,7 @@ export function actionsAt(r: RunState, x: number, y: number): Action[] {
     }
   }
   if (p.kind === 'terminal') {
-    if (!p.offer) p.offer = [...offerCards(r, 'tac').map((id) => `tac:${id}`), ...offerCards(r, 'exp').slice(0, 1).map((id) => `exp:${id}`)];
+    if (!p.offer || p.offer.some((o) => o.startsWith('exp:'))) p.offer = offerCards(r, 'tac').map((id) => `tac:${id}`);
     p.offer.forEach((o, i) => {
       const [deck, id] = o.split(':');
       out.push({ id: `buy:${i}`, label: CARDS[id].name, detail: `${deck === 'tac' ? 'tactical' : 'exploration'} · ${TERMINAL_PRICE} biomass`, ok: near && (p.buys ?? 0) < SITE_BUYS && r.biomass >= TERMINAL_PRICE, card: id });
@@ -1003,13 +1020,20 @@ export function doAction(r: RunState, x: number, y: number, id: string): boolean
   if (!a || !a.ok) return false;
   const g = gateAt(r.world, x, y);
   const p = poiAt(r, x, y);
-  if (id.startsWith('card:')) {
-    const uid = Number(id.slice(5));
-    spendExp(r, uid);
-    if (g) { g.open = true; say(r, g.kind === 'door' ? 'The door grinds open.' : 'The debris falls away.'); }
-    else if (p?.kind === 'cache') openCache(r, p, resolveCard(CARDS[expCard(r, uid)?.id ?? 'pry'], runTraits(r)).power > 0);
+  const clear = (forced: boolean) => {
+    if (g) { g.open = true; say(r, g.kind === 'door' ? (forced ? 'You wrench the door open.' : 'The lock gives. The door grinds open.') : (forced ? 'You tear a way through.' : 'You clear the debris.')); }
+    else if (p?.kind === 'cache') openCache(r, p, !forced);
     else if (p?.kind === 'nest') { p.used = true; r.codons += 2; say(r, 'The nest burns. +2 Codons.'); }
     reveal(r);
+  };
+  if (id === 'open') { clear(false); return true; }
+  if (id === 'force') {
+    const o = g ? obstacleCheck(r, g.kind === 'door' ? 'door' : 'debris', g.rating) : obstacleCheck(r, 'cache', 1);
+    r.hp -= o.cost;
+    const win = withRng(r, (rng) => rng.next() < o.chance);
+    if (win) clear(true);
+    else say(r, `It holds. −${o.cost} integrity.`);
+    if (r.hp <= 0) die(r, 'You tear yourself apart on it.');
     return true;
   }
   if (p && id.startsWith('mend:')) {
@@ -1026,10 +1050,6 @@ export function doAction(r: RunState, x: number, y: number, id: string): boolean
   if (p && id.startsWith('buy:')) { terminalBuy(r, p, Number(id.slice(4))); return true; }
   if (p && id.startsWith('ev:')) { eventChoose(r, p, Number(id.slice(3))); return true; }
   switch (id) {
-    case 'force':
-      if (g) { r.hp -= forceGateCost(r, g.rating); g.open = true; say(r, 'You force it. Something tears.'); }
-      else if (p) { r.hp -= forceCacheCost(r); openCache(r, p, false); }
-      return true;
     case 'rest': rest(r, p!); return true;
     case 'attack':
       startFight(r, here(r).nest, r.world.tier, { mobId: -1, tier: r.world.tier, kind: 'nest', reward: false, ambush: false, nestId: p!.id, at: facingToward(r, p!.x, p!.y) }, false, false, 0);
@@ -1044,7 +1064,7 @@ function openCache(r: RunState, p: Poi, extra: boolean) {
   const roll = withRng(r, (rng) => {
     const implant = rng.next() < 0.15;
     const card = extra || rng.next() < 0.6;
-    return { implant, card, bio: extra ? 4 : card ? 2 : 5 + rng.int(5), deck: (rng.next() < 0.7 ? 'tac' : 'exp') as DeckKind };
+    return { implant, card, bio: extra ? 4 : card ? 2 : 5 + rng.int(5), deck: 'tac' as DeckKind };
   });
   r.biomass += roll.bio;
   if (roll.implant) {
@@ -1074,7 +1094,6 @@ function vatSequence(r: RunState, k: Trait) {
   r.bankSpent += cost - fromRun;
   r.seq[k] += 1;
   r.hp += Math.max(0, maxHp(r) - before);
-  r.oxygen = Math.min(maxO2(r), r.oxygen);
   say(r, `The vat hums. ${TRAIT_INFO[k].name} ${r.seq[k]}, for good.`);
 }
 
@@ -1085,8 +1104,6 @@ function splice(r: RunState, p: Poi, k: Trait) {
   r.somatic[k] += 1;
   p.buys = (p.buys ?? 0) + 1;
   r.hp += Math.max(0, maxHp(r) - before);
-  const o2 = maxO2(r);
-  if (r.oxygen > o2) r.oxygen = o2;
   say(r, `The pod floods you. ${TRAIT_INFO[k].name} +1 for this print.`);
 }
 
@@ -1097,9 +1114,8 @@ function terminalBuy(r: RunState, p: Poi, i: number) {
   r.biomass -= TERMINAL_PRICE;
   p.buys = (p.buys ?? 0) + 1;
   p.offer = p.offer!.filter((_, k) => k !== i);
-  const inst = { uid: r.nextUid++, id };
-  if (deck === 'tac') r.tac.push(inst);
-  else { r.exp.push(inst); r.expDiscard.push(inst.uid); }
+  void deck;
+  r.tac.push({ uid: r.nextUid++, id });
   say(r, `The terminal prints ${CARDS[id].name}.`);
 }
 
@@ -1169,7 +1185,7 @@ function eventChoose(r: RunState, p: Poi, i: number) {
   const lines = [out.text];
   const mh = () => maxHp(r);
   if (out.biomass) { r.biomass += out.biomass; lines.push(`+${out.biomass} biomass.`); }
-  if (out.o2) { r.oxygen = Math.min(maxO2(r), r.oxygen + out.o2); lines.push(`+${out.o2} oxygen.`); }
+  if (out.o2) { const got = Math.min(maxHp(r) - r.hp, out.o2 * 2); r.hp += got; if (got) lines.push(`+${got} integrity.`); }
   if (out.codons) { r.codons += out.codons; lines.push(`+${out.codons} Codons.`); }
   if (out.somatic) {
     const k = out.somatic === 'random' ? withRng(r, (rng) => rng.pick(TRAITS.filter((q) => r.somatic[q] < SOMATIC_CAP))) : out.somatic;
@@ -1200,7 +1216,7 @@ function eventChoose(r: RunState, p: Poi, i: number) {
   r.notice = { title: `${ev.title} · ${ok ? (o.check ? 'success' : o.label) : 'failed'}`, text: lines.join(' ') };
   if (r.hp <= 0) { die(r, `${here(r).name} keeps you.`); return; }
   if (out.card) {
-    r.reward = { title: ev.title, options: offerCards(r, out.card), deck: out.card, biomass: 0, codons: 0 };
+    r.reward = { title: ev.title, options: offerCards(r, 'tac'), deck: 'tac', biomass: 0, codons: 0 };
     r.mode = 'reward';
   }
 }
@@ -1211,8 +1227,6 @@ function rest(r: RunState, p: Poi) {
   p.used = true;
   const heal = Math.floor(mh * 0.25) + t.met;
   r.hp = Math.min(mh, r.hp + heal);
-  r.oxygen = maxO2(r);
-  drawExp(r, exploreHandSize(t));
   for (const z of r.world.zones) if (z.id !== p.zone) respawnZone(r, z.id);
   say(r, `You rest. +${heal} integrity. Somewhere, things stir again.`);
 }
@@ -1265,8 +1279,6 @@ export function land(r: RunState, id: string): boolean {
   r.bossDead = false;
   const mh = maxHp(r);
   r.hp = Math.min(mh, r.hp + Math.floor(mh * 0.3));
-  r.oxygen = maxO2(r);
-  drawExp(r, exploreHandSize(runTraits(r)));
   r.mode = 'explore';
   reveal(r);
   const P = planet(id);
@@ -1296,11 +1308,6 @@ export function travel(r: RunState, x: number, y: number): boolean {
   if (r.world.mobs.some((m) => m.alive && m.alerted)) { say(r, 'Something is hunting you. You can’t travel now.'); return false; }
   r.x = x;
   r.y = y;
-  if (x === r.world.ship.x && y === r.world.ship.y) {
-    const t = runTraits(r);
-    r.oxygen = maxO2(r);
-    drawExp(r, exploreHandSize(t));
-  }
   reveal(r);
   return true;
 }

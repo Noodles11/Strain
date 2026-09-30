@@ -88,7 +88,7 @@ export function botRun(seed: number, level: number, landings = 1): { r: RunState
     const [nx, ny] = next;
     if (tileAt(r.world, nx, ny) === T_GATE && !gateAt(r.world, nx, ny)!.open) {
       const acts = actionsAt(r, nx, ny).filter((a) => a.ok);
-      const a = acts.find((q) => q.id.startsWith('card')) ?? acts.find((q) => q.id === 'force');
+      const a = acts.find((q) => q.id === 'open') ?? acts.find((q) => q.id === 'force');
       if (!a) break;
       doAction(r, nx, ny, a.id);
       continue;

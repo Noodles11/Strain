@@ -271,3 +271,20 @@ sup { font-size: 10px; }
   box-shadow: 0 10px 24px rgba(0,0,0,0.6); transition: box-shadow 0.1s, border-color 0.1s; }
 .drag-ghost.on-target { border-color: var(--sodium); box-shadow: 0 0 0 3px var(--sodium), 0 10px 24px rgba(0,0,0,0.6); }
 .plates .unit.drop .plate { border-color: var(--sodium); box-shadow: 0 0 0 2px var(--sodium), 0 0 18px rgba(227,163,59,0.55); }
+
+/* map: minimap under the HP bar, and the pause button */
+.scene canvas.mini { position: absolute; left: auto; right: var(--gut); top: 64px; width: 96px; height: 96px; border: 2px solid var(--bone);
+  background: #0b0d10; image-rendering: pixelated; cursor: pointer; z-index: 3; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
+.pause-btn { position: absolute; right: var(--gut); bottom: calc(14px + env(safe-area-inset-bottom)); width: 52px; height: 52px; border-radius: 50%;
+  border: 2px solid var(--bone); background: rgba(21,23,26,0.92); display: flex; align-items: center; justify-content: center; gap: 6px; z-index: 3; cursor: pointer; }
+.pause-btn i { display: block; width: 6px; height: 20px; background: var(--bone); }
+.pause-hp { display: flex; align-items: center; gap: 10px; }
+.pause-hp .bar { flex: 1; height: 14px; }
+.pause-hp span { font-family: var(--mono); font-weight: 700; white-space: nowrap; }
+.pause-nav { gap: 8px; margin: 8px 0; }
+.pause-nav .btn { flex: 1; }
+.genes { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; }
+.gene { display: grid; grid-template-columns: 18px 1fr auto; align-items: baseline; gap: 0 6px; font-size: 13px; }
+.gene em { font-style: normal; font-family: var(--mono); font-weight: 700; font-size: 16px; }
+.gene small { grid-column: 2 / 4; color: var(--dim); font-size: 11px; }
+.sheet h3 { margin: 12px 0 4px; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); }

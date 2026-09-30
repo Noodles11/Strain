@@ -55,6 +55,22 @@ Bot sim, two landings (rushes each boss, 20 seeds):
 | all 7 | 18 | 2 | 0 |
 | all 9 | 20 | 0 | 0 |
 
+## No more exploration cards or oxygen (rules change)
+
+- **The exploration deck is gone.** New prints start without one; rewards, terminals, events and caches only offer tactical cards.
+- **Obstacles are trait checks:** doors test Focus (rating × 2), debris Might (rating × 2), caches Might 5, burning a nest
+  Might 7. At or above the need it just works, no harm done. Below it you can **brute force** it: always a chance (40%, −10% per
+  missing point, never under 15%) and it always costs a little integrity (1 + rating, less with Hide), win or lose.
+- **Hidden caches** show themselves when you are right next to one, or within 3 tiles with Focus 6+.
+- **Oxygen is gone.** Fleeing is free; the storm burns 1 integrity per step inside it; landing patches +30% integrity.
+  Oxygen implants became integrity: Spare Lung (+4 max integrity), Adrenal Sac (+2 integrity after a win above half).
+- **Heal anywhere:** the pause menu mends integrity for biomass at any time outside a fight (2 per biomass, +1 per 3
+  Metabolism). Vats still offer the same mending.
+- **Map screen:** a small minimap (13 tiles around the clone) sits under the HP bar at the right edge; tap it for the full
+  map and fast travel. The Map/Deck/Menu dock and the exploration hand are gone: one round pause button (bottom right) opens
+  the **pause menu**: integrity and mending, deck, map, genome (each trait with sequence and splices), implants, stats,
+  print effect, back to the Printer, abandon.
+
 ## Real-time mobs
 
 - Mobs no longer wait for your steps: every 0.8 s on the map (while no menu is open and you aren't walking a path) the world
